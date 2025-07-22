@@ -31,7 +31,7 @@ class OFMNet(nn.Module):
         # Fusion (decoder) network
         self.fusion = Fusion('fusion', config)
 
-    def forward(self, x0: torch.Tensor, x1: torch.Tensor, time: torch.Tensor):
+    def forward(self, x0: torch.Tensor, x1: torch.Tensor, encoding0: torch.Tensor):
         """
         x0, x1: [B, C, H, W] floats
         time:  [B] or [B,1] float in [0,1]; we fix to 0.5 by default.
@@ -40,9 +40,15 @@ class OFMNet(nn.Module):
         img_pyr0 = util.build_image_pyramid(x0, self.config)
         img_pyr1 = util.build_image_pyramid(x1, self.config)
 
+        enc_pyr = util.build_image_pyramid(encoding0, self.config)
+
+
         # Extract feature pyramids (Siamese)
         feat_pyr0 = self.feature_extractor(img_pyr0)
         feat_pyr1 = self.feature_extractor(img_pyr1)
+
+        enc_feat_pyr = self.feature_extractor(enc_pyr)
+
 
         # Estimate residual flow pyramids (forward and backward)
         fwd_res_flow = self.predict_flow(feat_pyr0, feat_pyr1)
@@ -55,24 +61,21 @@ class OFMNet(nn.Module):
         fwd_flow_pyr = fwd_flow_pyr[:L]
         bwd_flow_pyr = bwd_flow_pyr[:L]
 
-        # Use fixed mid‐time = 0.5 (override if you want arbitrary t)
-        t_mid = torch.ones_like(time).view(-1) * 0.5
-        # Scale flows
-        bwd_flow_scaled = util.multiply_pyramid(bwd_flow_pyr,      t_mid)
-        fwd_flow_scaled = util.multiply_pyramid(fwd_flow_pyr, 1.0 - t_mid)
-
         # Prepare pyramids to warp: stack image + features per level
-        to_warp_0 = util.concatenate_pyramids(img_pyr0[:L], feat_pyr0[:L])
-        to_warp_1 = util.concatenate_pyramids(img_pyr1[:L], feat_pyr1[:L])
-
+        to_warp_0_a = util.concatenate_pyramids(enc_pyr[:L], enc_feat_pyr[:L])
         # Warp using backward warping (reads from source via flow)
-        fwd_warped = util.pyramid_warp(to_warp_0, bwd_flow_scaled)
-        bwd_warped = util.pyramid_warp(to_warp_1, fwd_flow_scaled)
+        bwd_warped = util.pyramid_warp(to_warp_0_a, fwd_flow_pyr)
+
+        fwd_flow_on_t1 = util.pyramid_warp(fwd_flow_pyr, bwd_flow_pyr)
+        # (b) Invert it (negate) so it tells us where in encoding0 to sample:
+        inv_fwd_flow = [ -flow for flow in fwd_flow_on_t1 ]
+        # (c) Warp encoding0 by that inverted‐forward field:
+        fwd_warped = util.pyramid_warp(to_warp_0_a, inv_fwd_flow)
 
         # Build the aligned pyramid: [warp0, warp1, bwd_flow, fwd_flow]
         aligned = util.concatenate_pyramids(fwd_warped, bwd_warped)
-        aligned = util.concatenate_pyramids(aligned, bwd_flow_scaled)
-        aligned = util.concatenate_pyramids(aligned, fwd_flow_scaled)
+        aligned = util.concatenate_pyramids(aligned, bwd_flow_pyr)
+        aligned = util.concatenate_pyramids(aligned, fwd_flow_pyr)
 
         # Fuse to get final prediction
         pred = self.fusion(aligned)
