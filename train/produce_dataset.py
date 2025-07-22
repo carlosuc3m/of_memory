@@ -10,6 +10,12 @@ import torch
 from torchvision import transforms
 import torchvision.transforms.functional as F
 
+import sys
+
+from sam2.sam2_image_predictor import SAM2ImagePredictor
+
+
+
 # -----------------------------------------------------------------------------
 # 1) Replace this with however you load your encoder.
 #    It must be a nn.Module that maps a batch of images to a batch of vectors:
@@ -18,11 +24,9 @@ import torchvision.transforms.functional as F
 # -----------------------------------------------------------------------------
 def load_encoder():
     # Example stub — replace with your actual model
-    model = torch.hub.load('pytorch/vision:v0.15.2', 'resnet18', pretrained=True)
-    # chop off final classifier
-    model = torch.nn.Sequential(*list(model.children())[:-1], torch.nn.Flatten())
-    model.output_dim = 512
-    return model
+    predictor = SAM2ImagePredictor.from_pretrained("facebook/sam2-hiera-large", ckpt_path="/home/carlos/Downloads/sam2.1_hiera_large.pt")
+
+    return predictor
 
 # -----------------------------------------------------------------------------
 # 2) Settings: adjust paths, augmentation count, and target size here
@@ -114,7 +118,8 @@ def main():
                     a1, a2 = paired_augment(imgA, imgB)
                     t1 = to_tensor(a1).unsqueeze(0).to(DEVICE)
                     t2 = to_tensor(a2).unsqueeze(0).to(DEVICE)
-                    with torch.no_grad():
+                    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+                        encoder.set_image(t1)
                         f1 = encoder(t1).squeeze(0).cpu().numpy()
                         f2 = encoder(t2).squeeze(0).cpu().numpy()
 
