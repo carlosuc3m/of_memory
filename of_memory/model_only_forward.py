@@ -51,14 +51,11 @@ class OFMNet(nn.Module):
 
 
         # Estimate residual flow pyramids (forward and backward)
-        fwd_res_flow = self.predict_flow(feat_pyr0, feat_pyr1)
         bwd_res_flow = self.predict_flow(feat_pyr1, feat_pyr0)
 
         # Synthesize full flows and truncate to fusion levels
-        fwd_flow_pyr = util.flow_pyramid_synthesis(fwd_res_flow)
         bwd_flow_pyr = util.flow_pyramid_synthesis(bwd_res_flow)
         L = self.config.fusion_pyramid_levels
-        fwd_flow_pyr = fwd_flow_pyr[:L]
         bwd_flow_pyr = bwd_flow_pyr[:L]
 
         # Prepare pyramids to warp: stack image + features per level
@@ -66,16 +63,8 @@ class OFMNet(nn.Module):
         # Warp using backward warping (reads from source via flow)
         bwd_warped = util.pyramid_warp(to_warp_0_a, bwd_flow_pyr)
 
-        fwd_flow_on_t1 = util.pyramid_warp(fwd_flow_pyr, bwd_flow_pyr)
-        # (b) Invert it (negate) so it tells us where in encoding0 to sample:
-        inv_fwd_flow = [ -flow for flow in fwd_flow_on_t1 ]
-        # (c) Warp encoding0 by that inverted‐forward field:
-        fwd_warped = util.pyramid_warp(to_warp_0_a, inv_fwd_flow)
-
         # Build the aligned pyramid: [warp0, warp1, bwd_flow, fwd_flow]
-        aligned = util.concatenate_pyramids(fwd_warped, bwd_warped)
-        aligned = util.concatenate_pyramids(aligned, bwd_flow_pyr)
-        aligned = util.concatenate_pyramids(aligned, fwd_flow_pyr)
+        aligned = util.concatenate_pyramids(bwd_warped, bwd_flow_pyr)
 
         # Fuse to get final prediction
         pred = self.fusion(aligned)
@@ -84,11 +73,8 @@ class OFMNet(nn.Module):
         # Optionally add aux outputs for debugging/supervision
         if self.config.use_aux_outputs:
             out.update({
-                'x0_warped': fwd_warped[0][..., :3],
                 'x1_warped': bwd_warped[0][..., :3],
-                'forward_residual_flow_pyramid': fwd_res_flow,
                 'backward_residual_flow_pyramid': bwd_res_flow,
-                'forward_flow_pyramid': fwd_flow_pyr,
                 'backward_flow_pyramid': bwd_flow_pyr,
             })
 
