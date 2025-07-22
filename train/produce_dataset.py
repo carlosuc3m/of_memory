@@ -27,8 +27,8 @@ def load_encoder():
 # -----------------------------------------------------------------------------
 # 2) Settings: adjust paths, augmentation count, and target size here
 # -----------------------------------------------------------------------------
-VIDEO_DIR             = 'videos/'        # where your .mp4 files live
-OUT_H5                = 'data_pairs.h5'  # output HDF5
+VIDEO_DIR             = '/home/carlos/git_amazon/of_memory/videos/'        # where your .mp4 files live
+OUT_H5                = '/home/carlos/git_amazon/of_memory/dataset/data_pairs.h5'  # output HDF5
 AUGS_PER_PAIR         = 3                # how many random augs per consecutive pair
 TARGET_SIZE           = (224, 224)       # spatial size for crop/resize
 DEVICE                = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -38,7 +38,13 @@ DEVICE                = 'cuda' if torch.cuda.is_available() else 'cpu'
 # -----------------------------------------------------------------------------
 def paired_augment(img1: Image.Image, img2: Image.Image):
     # random crop
-    i, j, h, w = transforms.RandomCrop.get_params(img1, output_size=TARGET_SIZE)
+    w_scale = random.uniform(0.75, 1.0)
+    h_scale = random.uniform(0.75, 1.0)
+    crop_w = int(w_scale * img1.width)
+    crop_h = int(h_scale * img1.height)
+    i, j, h, w = transforms.RandomCrop.get_params(
+        img1, output_size=(crop_h, crop_w)
+    )
     img1 = F.crop(img1, i, j, h, w)
     img2 = F.crop(img2, i, j, h, w)
     # random horizontal flip
@@ -98,8 +104,12 @@ def main():
             cap.release()
 
             # process each consecutive pair
-            for i in range(len(frames) - 1):
-                imgA, imgB = frames[i], frames[i+1]
+            MAX_FRAME_DIS = 10
+            L = len(frames) - 1
+            for i in range(L):
+                imgA = frames[i]
+                ind_b = random.randint(max(i- 10, 0), min(i + 10, L))
+                imgB = frames[ind_b]
                 for _ in range(AUGS_PER_PAIR):
                     a1, a2 = paired_augment(imgA, imgB)
                     t1 = to_tensor(a1).unsqueeze(0).to(DEVICE)
@@ -109,8 +119,8 @@ def main():
                         f2 = encoder(t2).squeeze(0).cpu().numpy()
 
                     # append
-                    for ds, arr in ((img1_ds, np.array(a1, dtype='uint8')),
-                                    (img2_ds, np.array(a2, dtype='uint8')),
+                    for ds, arr in ((img1_ds, np.array(a1)),
+                                    (img2_ds, np.array(a2)),
                                     (enc1_ds, f1),
                                     (enc2_ds, f2)):
                         ds.resize((idx+1, *ds.shape[1:]))
