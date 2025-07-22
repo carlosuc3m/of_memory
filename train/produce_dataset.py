@@ -24,9 +24,10 @@ from sam2.sam2_image_predictor import SAM2ImagePredictor
 # -----------------------------------------------------------------------------
 def load_encoder():
     # Example stub — replace with your actual model
-    predictor = SAM2ImagePredictor.from_pretrained("facebook/sam2-hiera-large", ckpt_path="/home/carlos/Downloads/sam2.1_hiera_large.pt")
+    from sam2.build_sam import build_sam2
 
-    return predictor
+    sam_model = build_sam2("configs/sam2.1/sam2.1_hiera_l.yaml", ckpt_path="/home/carlos/Downloads/sam2.1_hiera_large.pt")
+    return SAM2ImagePredictor(sam_model.to(DEVICE).eval())
 
 # -----------------------------------------------------------------------------
 # 2) Settings: adjust paths, augmentation count, and target size here
@@ -34,7 +35,7 @@ def load_encoder():
 VIDEO_DIR             = '/home/carlos/git_amazon/of_memory/videos/'        # where your .mp4 files live
 OUT_H5                = '/home/carlos/git_amazon/of_memory/dataset/data_pairs.h5'  # output HDF5
 AUGS_PER_PAIR         = 3                # how many random augs per consecutive pair
-TARGET_SIZE           = (224, 224)       # spatial size for crop/resize
+TARGET_SIZE           = (1024, 1024)       # spatial size for crop/resize
 DEVICE                = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # -----------------------------------------------------------------------------
@@ -57,9 +58,25 @@ def paired_augment(img1: Image.Image, img2: Image.Image):
         img2 = F.hflip(img2)
     # random color jitter
     cj = transforms.ColorJitter(0.2,0.2,0.2,0.1)
-    fn = cj.get_params(cj.brightness, cj.contrast, cj.saturation, cj.hue)
-    img1 = fn(img1)
-    img2 = fn(img2)
+
+    fn_idx, brightness_factor, contrast_factor, saturation_factor, hue_factor = cj.get_params(
+        cj.brightness, cj.contrast, cj.saturation, cj.hue
+    )
+
+    for fn_id in fn_idx:
+        if fn_id == 0 and brightness_factor is not None:
+            img1 = F.adjust_brightness(img1, brightness_factor)
+            img2 = F.adjust_brightness(img2, brightness_factor)
+        elif fn_id == 1 and contrast_factor is not None:
+            img1 = F.adjust_contrast(img1, contrast_factor)
+            img2 = F.adjust_contrast(img2, contrast_factor)
+        elif fn_id == 2 and saturation_factor is not None:
+            img1 = F.adjust_saturation(img1, saturation_factor)
+            img2 = F.adjust_saturation(img2, saturation_factor)
+        elif fn_id == 3 and hue_factor is not None:
+            img1 = F.adjust_hue(img1, hue_factor)
+            img2 = F.adjust_hue(img2, hue_factor)
+
     return img1, img2
 
 # -----------------------------------------------------------------------------
@@ -67,31 +84,47 @@ def paired_augment(img1: Image.Image, img2: Image.Image):
 # -----------------------------------------------------------------------------
 def main():
     # load encoder
-    encoder = load_encoder().to(DEVICE).eval()
+    encoder = load_encoder()
     to_tensor = transforms.ToTensor()
 
     # gather all mp4s
-    video_paths = glob.glob(os.path.join(VIDEO_DIR, '*.mp4'))
+    video_paths = glob.glob(os.path.join(VIDEO_DIR, '**', '*.mp4'), recursive=True)
     if not video_paths:
         raise RuntimeError(f"No .mp4 files found in {VIDEO_DIR!r}")
 
     # open HDF5 with resizable datasets
     with h5py.File(OUT_H5, 'w') as h5:
         img1_ds = h5.create_dataset('img1',
-                                    shape=(0, TARGET_SIZE[0], TARGET_SIZE[1], 3),
-                                    maxshape=(None, TARGET_SIZE[0], TARGET_SIZE[1], 3),
-                                    dtype='uint8')
+                                    shape=(0, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
+                                    maxshape=(None, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
+                                    dtype='float32')
         img2_ds = h5.create_dataset('img2',
-                                    shape=(0, TARGET_SIZE[0], TARGET_SIZE[1], 3),
-                                    maxshape=(None, TARGET_SIZE[0], TARGET_SIZE[1], 3),
-                                    dtype='uint8')
+                                    shape=(0, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
+                                    maxshape=(None, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
+                                    dtype='float32')
         enc1_ds = h5.create_dataset('enc1',
-                                    shape=(0, encoder.output_dim),
-                                    maxshape=(None, encoder.output_dim),
+                                    shape=(0, 256, 64, 64),
+                                    maxshape=(None, 256, 64, 64),
                                     dtype='float32')
         enc2_ds = h5.create_dataset('enc2',
-                                    shape=(0, encoder.output_dim),
-                                    maxshape=(None, encoder.output_dim),
+                                    shape=(0, 256, 64, 64),
+                                    maxshape=(None, 256, 64, 64),
+                                    dtype='float32')
+        hr_11_ds = h5.create_dataset('hr_11',
+                                    shape=(0, 32, 256, 256),
+                                    maxshape=(None, 32, 256, 256),
+                                    dtype='float32')
+        hr_12_ds = h5.create_dataset('hr_12',
+                                    shape=(0, 32, 256, 256),
+                                    maxshape=(None, 32, 256, 256),
+                                    dtype='float32')
+        hr_21_ds = h5.create_dataset('hr_21',
+                                    shape=(0, 64, 128, 128),
+                                    maxshape=(None, 64, 128, 128),
+                                    dtype='float32')
+        hr_22_ds = h5.create_dataset('hr_22',
+                                    shape=(0, 64, 128, 128),
+                                    maxshape=(None, 64, 128, 128),
                                     dtype='float32')
 
         idx = 0
@@ -111,23 +144,40 @@ def main():
             MAX_FRAME_DIS = 10
             L = len(frames) - 1
             for i in range(L):
+                if (idx % 600 == 0):
+                    print(i)
                 imgA = frames[i]
                 ind_b = random.randint(max(i- 10, 0), min(i + 10, L))
                 imgB = frames[ind_b]
                 for _ in range(AUGS_PER_PAIR):
                     a1, a2 = paired_augment(imgA, imgB)
-                    t1 = to_tensor(a1).unsqueeze(0).to(DEVICE)
-                    t2 = to_tensor(a2).unsqueeze(0).to(DEVICE)
+                    #t1 = to_tensor(a1).unsqueeze(0).to(DEVICE)
+                    #t2 = to_tensor(a2).unsqueeze(0).to(DEVICE)
                     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-                        encoder.set_image(t1)
-                        f1 = encoder(t1).squeeze(0).cpu().numpy()
-                        f2 = encoder(t2).squeeze(0).cpu().numpy()
+                        encoder.set_image(a1)
+                        image_embed = encoder._features["image_embed"]
+                        high_res_feats = encoder._features["high_res_feats"]
+                        f1 = image_embed.cpu().numpy()
+                        hr_11 = high_res_feats[0].to(torch.float32).cpu().numpy()
+                        hr_21 = high_res_feats[1].to(torch.float32).cpu().numpy()
+                        encoder.set_image(a2)
+                        image_embed = encoder._features["image_embed"]
+                        high_res_feats = encoder._features["high_res_feats"]
+                        f2 = image_embed.cpu().numpy()
+                        hr_12 = high_res_feats[0].to(torch.float32).cpu().numpy()
+                        hr_22 = high_res_feats[1].to(torch.float32).cpu().numpy()
+                        a1 = encoder._transforms(a1)[None, ...].cpu().numpy()
+                        a2 = encoder._transforms(a2)[None, ...].cpu().numpy()
 
                     # append
-                    for ds, arr in ((img1_ds, np.array(a1)),
-                                    (img2_ds, np.array(a2)),
+                    for ds, arr in ((img1_ds, a1),
+                                    (img2_ds, a2),
                                     (enc1_ds, f1),
-                                    (enc2_ds, f2)):
+                                    (enc2_ds, f2),
+                                    (hr_11_ds, hr_11),
+                                    (hr_12_ds, hr_12),
+                                    (hr_21_ds, hr_21),
+                                    (hr_22_ds, hr_22)):
                         ds.resize((idx+1, *ds.shape[1:]))
                         ds[idx] = arr
                     idx += 1
