@@ -33,7 +33,7 @@ def load_encoder():
 # 2) Settings: adjust paths, augmentation count, and target size here
 # -----------------------------------------------------------------------------
 VIDEO_DIR             = '/home/carlos/git_amazon/of_memory/videos/'        # where your .mp4 files live
-OUT_H5                = '/home/carlos/git_amazon/of_memory/dataset/data_pairs.h5'  # output HDF5
+OUT_H5                = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_0.h5'  # output HDF5
 AUGS_PER_PAIR         = 3                # how many random augs per consecutive pair
 TARGET_SIZE           = (1024, 1024)       # spatial size for crop/resize
 DEVICE                = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -85,7 +85,9 @@ def paired_augment(img1: Image.Image, img2: Image.Image):
 def main():
     # load encoder
     encoder = load_encoder()
-    to_tensor = transforms.ToTensor()
+    transforms_rgb = torch.jit.script(
+            transforms.Resize((1024, 1024))
+        )
 
     # gather all mp4s
     video_paths = glob.glob(os.path.join(VIDEO_DIR, '**', '*.mp4'), recursive=True)
@@ -97,11 +99,11 @@ def main():
         img1_ds = h5.create_dataset('img1',
                                     shape=(0, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
                                     maxshape=(None, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
-                                    dtype='float32')
+                                    dtype='uint8')
         img2_ds = h5.create_dataset('img2',
                                     shape=(0, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
                                     maxshape=(None, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
-                                    dtype='float32')
+                                    dtype='uint8')
         enc1_ds = h5.create_dataset('enc1',
                                     shape=(0, 256, 64, 64),
                                     maxshape=(None, 256, 64, 64),
@@ -110,25 +112,11 @@ def main():
                                     shape=(0, 256, 64, 64),
                                     maxshape=(None, 256, 64, 64),
                                     dtype='float32')
-        hr_11_ds = h5.create_dataset('hr_11',
-                                    shape=(0, 32, 256, 256),
-                                    maxshape=(None, 32, 256, 256),
-                                    dtype='float32')
-        hr_12_ds = h5.create_dataset('hr_12',
-                                    shape=(0, 32, 256, 256),
-                                    maxshape=(None, 32, 256, 256),
-                                    dtype='float32')
-        hr_21_ds = h5.create_dataset('hr_21',
-                                    shape=(0, 64, 128, 128),
-                                    maxshape=(None, 64, 128, 128),
-                                    dtype='float32')
-        hr_22_ds = h5.create_dataset('hr_22',
-                                    shape=(0, 64, 128, 128),
-                                    maxshape=(None, 64, 128, 128),
-                                    dtype='float32')
 
         idx = 0
-        for vid_path in video_paths:
+        iter_per = 500
+        for vid_path in video_paths[:len(video_paths) // 2]:
+            print(vid_path)
             cap = cv2.VideoCapture(vid_path)
             frames = []
             while True:
@@ -143,9 +131,11 @@ def main():
             # process each consecutive pair
             MAX_FRAME_DIS = 10
             L = len(frames) - 1
-            for i in range(L):
-                if (idx % 600 == 0):
-                    print(i)
+            selected_inds = random.sample(range(1, L - 1), L // 50)
+            for i in selected_inds:
+                if idx > iter_per:
+                    print(idx)
+                    iter_per += 500
                 imgA = frames[i]
                 ind_b = random.randint(max(i- 10, 0), min(i + 10, L))
                 imgB = frames[ind_b]
@@ -154,30 +144,22 @@ def main():
                     #t1 = to_tensor(a1).unsqueeze(0).to(DEVICE)
                     #t2 = to_tensor(a2).unsqueeze(0).to(DEVICE)
                     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+                        tensor1 = transforms_rgb(torch.from_numpy(np.array(a1)).permute(2, 0, 1)).unsqueeze(0).cpu().numpy()
+                        tensor2 = transforms_rgb(torch.from_numpy(np.array(a2)).permute(2, 0, 1)).unsqueeze(0).cpu().numpy()
                         encoder.set_image(a1)
                         image_embed = encoder._features["image_embed"]
-                        high_res_feats = encoder._features["high_res_feats"]
                         f1 = image_embed.cpu().numpy()
-                        hr_11 = high_res_feats[0].to(torch.float32).cpu().numpy()
-                        hr_21 = high_res_feats[1].to(torch.float32).cpu().numpy()
                         encoder.set_image(a2)
                         image_embed = encoder._features["image_embed"]
-                        high_res_feats = encoder._features["high_res_feats"]
                         f2 = image_embed.cpu().numpy()
-                        hr_12 = high_res_feats[0].to(torch.float32).cpu().numpy()
-                        hr_22 = high_res_feats[1].to(torch.float32).cpu().numpy()
-                        a1 = encoder._transforms(a1)[None, ...].cpu().numpy()
-                        a2 = encoder._transforms(a2)[None, ...].cpu().numpy()
+                        #a1 = encoder._transforms(a1)[None, ...].cpu().numpy()
+                        #a2 = encoder._transforms(a2)[None, ...].cpu().numpy()
 
                     # append
-                    for ds, arr in ((img1_ds, a1),
-                                    (img2_ds, a2),
+                    for ds, arr in ((img1_ds, tensor1),
+                                    (img2_ds, tensor2),
                                     (enc1_ds, f1),
-                                    (enc2_ds, f2),
-                                    (hr_11_ds, hr_11),
-                                    (hr_12_ds, hr_12),
-                                    (hr_21_ds, hr_21),
-                                    (hr_22_ds, hr_22)):
+                                    (enc2_ds, f2),):
                         ds.resize((idx+1, *ds.shape[1:]))
                         ds[idx] = arr
                     idx += 1
