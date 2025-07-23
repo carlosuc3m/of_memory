@@ -2,34 +2,66 @@ import time
 import copy
 from typing import Optional, Dict, Any
 
+import h5py
+
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from of_memory.model import OFModel
+from config import Options
+
 
 
 def main():
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=training_options.learning_rate
-    )
 
-    if training_options.learning_rate_staircase:
-        # “Staircase” decay: multiply by decay_rate every decay_steps steps
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer,
-            step_size=training_options.learning_rate_decay_steps,
-            gamma=training_options.learning_rate_decay_rate
+    with h5py.File("/home/carlos/git_amazon/of_memory/dataset/data_pairs_1.h5") as data:
+
+        pyramid_levels = 7
+        fusion_pyramid_levels = 5
+        specialized_levels = 3
+        sub_levels = 4
+        flow_convs = [3, 3, 3, 3]
+        flow_filters = [32, 64, 128, 256]
+        filters = 64
+
+        learning_rate = 0.0001
+        learning_rate_decay_steps = 750000
+        learning_rate_decay_rate = 0.464158
+        learning_rate_staircase = True
+        num_steps = 3000000
+
+        model = OFModel(Options(pyramid_levels=pyramid_levels, 
+                                fusion_pyramid_levels=fusion_pyramid_levels,
+                                specialized_levels=specialized_levels,
+                                flow_convs=flow_convs,
+                                flow_filters=flow_filters,
+                                sub_levels=sub_levels,
+                                filters=filters,
+                                use_aux_outputs=True))
+
+
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=learning_rate
         )
-    else:
-        # Smooth exponential decay: continuous, exactly
-        # lr = lr0 * decay_rate ** (step / decay_steps)
-        gamma = training_options.learning_rate_decay_rate ** (1.0 / training_options.learning_rate_decay_steps)
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            optimizer,
-            gamma=gamma
-        )
+
+        if learning_rate_staircase:
+            # “Staircase” decay: multiply by decay_rate every decay_steps steps
+            scheduler = torch.optim.lr_scheduler.StepLR(
+                optimizer,
+                step_size=learning_rate_decay_steps,
+                gamma=learning_rate_decay_rate
+            )
+        else:
+            # Smooth exponential decay: continuous, exactly
+            # lr = lr0 * decay_rate ** (step / decay_steps)
+            gamma = learning_rate_decay_rate ** (1.0 / learning_rate_decay_steps)
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(
+                optimizer,
+                gamma=gamma
+            )
 
 
 
