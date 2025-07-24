@@ -33,15 +33,15 @@ class EncodingDataset(Dataset):
         }
 
         if random.uniform(0, 1) > 0.5:
-            input_1 = torch.from_numpy(arrs['img1'].copy())
-            enc_1 = torch.from_numpy(arrs['enc1'].copy())
-            input_2 = torch.from_numpy(arrs['img2'].copy())
-            enc_2 = torch.from_numpy(arrs['enc2'].copy())
+            input_1 = torch.from_numpy(arrs['img1'].copy()).unsqueeze(0).float().cuda()
+            enc_1 = torch.from_numpy(arrs['enc1'].copy()).unsqueeze(0).float().cuda()
+            input_2 = torch.from_numpy(arrs['img2'].copy()).unsqueeze(0).float().cuda()
+            enc_2 = torch.from_numpy(arrs['enc2'].copy()).unsqueeze(0).float().cuda()
         else:
-            input_2 = torch.from_numpy(arrs['img1'].copy())
-            enc_2 = torch.from_numpy(arrs['enc1'].copy())
-            input_1 = torch.from_numpy(arrs['img2'].copy())
-            enc_1 = torch.from_numpy(arrs['enc2'].copy())
+            input_2 = torch.from_numpy(arrs['img1'].copy()).unsqueeze(0).float().cuda()
+            enc_2 = torch.from_numpy(arrs['enc1'].copy()).unsqueeze(0).float().cuda()
+            input_1 = torch.from_numpy(arrs['img2'].copy()).unsqueeze(0).float().cuda()
+            enc_1 = torch.from_numpy(arrs['enc2'].copy()).unsqueeze(0).float().cuda()
 
         hflip = random.choice([True, False])
         vflip = random.choice([True, False])

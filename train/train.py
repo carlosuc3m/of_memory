@@ -19,69 +19,68 @@ from config.config import Options
 
 def main():
 
-    with h5py.File("/home/carlos/git_amazon/of_memory/dataset/data_pairs_0.h5") as data:
 
-        pyramid_levels = 7
-        fusion_pyramid_levels = 5
-        specialized_levels = 3
-        sub_levels = 4
-        flow_convs = [3, 3, 3, 3]
-        flow_filters = [32, 64, 128, 256]
-        filters = 64
+    pyramid_levels = 7
+    fusion_pyramid_levels = 5
+    specialized_levels = 3
+    sub_levels = 4
+    flow_convs = [3, 3, 3, 3]
+    flow_filters = [32, 64, 128, 256]
+    filters = 64
 
-        learning_rate = 0.0001
-        learning_rate_decay_steps = 750000
-        learning_rate_decay_rate = 0.464158
-        learning_rate_staircase = True
-        num_steps = 3000000
-        config = Options(pyramid_levels=pyramid_levels, 
-                                fusion_pyramid_levels=fusion_pyramid_levels,
-                                specialized_levels=specialized_levels,
-                                flow_convs=flow_convs,
-                                flow_filters=flow_filters,
-                                sub_levels=sub_levels,
-                                filters=filters,
-                                use_aux_outputs=True)
+    learning_rate = 0.0001
+    learning_rate_decay_steps = 750000
+    learning_rate_decay_rate = 0.464158
+    learning_rate_staircase = True
+    num_steps = 3000000
+    config = Options(pyramid_levels=pyramid_levels, 
+                            fusion_pyramid_levels=fusion_pyramid_levels,
+                            specialized_levels=specialized_levels,
+                            flow_convs=flow_convs,
+                            flow_filters=flow_filters,
+                            sub_levels=sub_levels,
+                            filters=filters,
+                            use_aux_outputs=True)
 
-        model = OFMNet(config)
+    model = OFMNet(config)
 
 
-        optimizer = torch.optim.Adam(
-            model.parameters(),
-            lr=learning_rate
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=learning_rate
+    )
+
+    if learning_rate_staircase:
+        # “Staircase” decay: multiply by decay_rate every decay_steps steps
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=learning_rate_decay_steps,
+            gamma=learning_rate_decay_rate
         )
+    else:
+        # Smooth exponential decay: continuous, exactly
+        # lr = lr0 * decay_rate ** (step / decay_steps)
+        gamma = learning_rate_decay_rate ** (1.0 / learning_rate_decay_steps)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            optimizer,
+            gamma=gamma
+        )
+    h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_1.h5'
+    transforms = OFMTransforms(1024, max_hole_area=0.0, max_sprinkle_area=0.0)
+    dataset = EncodingDataset(h5_path, transform=transforms)
+    train_len = int(0.8 * len(dataset))
+    val_len   = len(dataset) - train_len
 
-        if learning_rate_staircase:
-            # “Staircase” decay: multiply by decay_rate every decay_steps steps
-            scheduler = torch.optim.lr_scheduler.StepLR(
-                optimizer,
-                step_size=learning_rate_decay_steps,
-                gamma=learning_rate_decay_rate
-            )
-        else:
-            # Smooth exponential decay: continuous, exactly
-            # lr = lr0 * decay_rate ** (step / decay_steps)
-            gamma = learning_rate_decay_rate ** (1.0 / learning_rate_decay_steps)
-            scheduler = torch.optim.lr_scheduler.ExponentialLR(
-                optimizer,
-                gamma=gamma
-            )
-        h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_0.h5'
-        transforms = OFMTransforms(1024, max_hole_area=0.0, max_sprinkle_area=0.0)
-        dataset = EncodingDataset(h5_path, transform=transforms)
-        train_len = int(0.8 * len(dataset))
-        val_len   = len(dataset) - train_len
+    # reproducible split
+    torch.manual_seed(42)
+    train_ds, val_ds = random_split(dataset, [train_len, val_len])
 
-        # reproducible split
-        torch.manual_seed(42)
-        train_ds, val_ds = random_split(dataset, [train_len, val_len])
+    train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, num_workers=4)
+    val_loader   = DataLoader(val_ds,   batch_size=32, shuffle=False, num_workers=2)
+    batch_iter = iter(train_loader)   # create an iterator over the DataLoader
+    in0, in1, enc0, enc1 = next(batch_iter) 
 
-        train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, num_workers=4)
-        val_loader   = DataLoader(val_ds,   batch_size=32, shuffle=False, num_workers=2)
-        batch_iter = iter(train_loader)   # create an iterator over the DataLoader
-        in0, in1, enc0, enc1 = next(batch_iter) 
-
-        train_model(model, train_loader, val_loader, optimizer, torch.cuda())
+    train_model(model, train_loader, val_loader, optimizer, torch.cuda())
 
 
 
