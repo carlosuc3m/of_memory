@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
+from config.config import Options
 
 from . import util
 from .feature_extractor import FeatureExtractor
 from .pyramid_flow_estimator import PyramidFlowEstimator
 from .fusion import Fusion
-from .options import Options
+
 
 class OFMNet(nn.Module):
     """
@@ -25,11 +26,11 @@ class OFMNet(nn.Module):
         self.config = config
 
         # Siamese feature extractor
-        self.feature_extractor = FeatureExtractor('feat_net', config)
+        self.feature_extractor = FeatureExtractor(config)
         # Shared flow predictor
-        self.predict_flow = PyramidFlowEstimator('predict_flow', config)
+        self.predict_flow = PyramidFlowEstimator(config)
         # Fusion (decoder) network
-        self.fusion = Fusion('fusion', config)
+        self.fusion = Fusion(config)
 
     def forward(self, x0: torch.Tensor, x1: torch.Tensor, encoding0: torch.Tensor):
         """

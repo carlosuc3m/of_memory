@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List
-from .options import Options
+from config.config import Options
 from . import util
 
 def _leaky_relu(x: torch.Tensor) -> torch.Tensor:

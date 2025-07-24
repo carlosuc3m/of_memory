@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List
-from .options import Options
+from config.config import Options
 
 def build_image_pyramid(image: torch.Tensor,
                         options: Options) -> List[torch.Tensor]:

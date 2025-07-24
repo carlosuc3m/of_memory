@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List
-from .options import Options
+from config.config import Options
 
 _NUMBER_OF_COLOR_CHANNELS = 3
 

@@ -6,17 +6,20 @@ import h5py
 
 import torch
 from torch import nn, optim
-from torch.utils.data import DataLoader
+from torch.utils.data import random_split, DataLoader
 from tqdm import tqdm
 
-from of_memory.model import OFModel
-from config import Options
+from of_memory.model import OFMNet
+from of_memory.ofm_transforms import OFMTransforms
+from of_memory.encoding_dataset import EncodingDataset
+
+from config.config import Options
 
 
 
 def main():
 
-    with h5py.File("/home/carlos/git_amazon/of_memory/dataset/data_pairs_1.h5") as data:
+    with h5py.File("/home/carlos/git_amazon/of_memory/dataset/data_pairs_0.h5") as data:
 
         pyramid_levels = 7
         fusion_pyramid_levels = 5
@@ -31,15 +34,16 @@ def main():
         learning_rate_decay_rate = 0.464158
         learning_rate_staircase = True
         num_steps = 3000000
-
-        model = OFModel(Options(pyramid_levels=pyramid_levels, 
+        config = Options(pyramid_levels=pyramid_levels, 
                                 fusion_pyramid_levels=fusion_pyramid_levels,
                                 specialized_levels=specialized_levels,
                                 flow_convs=flow_convs,
                                 flow_filters=flow_filters,
                                 sub_levels=sub_levels,
                                 filters=filters,
-                                use_aux_outputs=True))
+                                use_aux_outputs=True)
+
+        model = OFMNet(config)
 
 
         optimizer = torch.optim.Adam(
@@ -62,6 +66,22 @@ def main():
                 optimizer,
                 gamma=gamma
             )
+        h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_0.h5'
+        transforms = OFMTransforms(1024, max_hole_area=0.0, max_sprinkle_area=0.0)
+        dataset = EncodingDataset(h5_path, transform=transforms)
+        train_len = int(0.8 * len(dataset))
+        val_len   = len(dataset) - train_len
+
+        # reproducible split
+        torch.manual_seed(42)
+        train_ds, val_ds = random_split(dataset, [train_len, val_len])
+
+        train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, num_workers=4)
+        val_loader   = DataLoader(val_ds,   batch_size=32, shuffle=False, num_workers=2)
+        batch_iter = iter(train_loader)   # create an iterator over the DataLoader
+        in0, in1, enc0, enc1 = next(batch_iter) 
+
+        train_model(model, train_loader, val_loader, optimizer, torch.cuda())
 
 
 
@@ -178,3 +198,7 @@ def train_model(
         'history': history,
         'best_epoch': best_epoch
     }
+
+
+if __name__ == '__main__':
+  main()

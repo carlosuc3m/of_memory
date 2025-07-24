@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List
-from .options import Options
+from config.config import Options
 
 def _leaky_relu(x: torch.Tensor) -> torch.Tensor:
     return F.leaky_relu(x, negative_slope=0.2)

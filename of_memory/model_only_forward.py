@@ -5,7 +5,7 @@ from . import util
 from .feature_extractor import FeatureExtractor
 from .pyramid_flow_estimator import PyramidFlowEstimator
 from .fusion import Fusion
-from .options import Options
+from config.config import Options
 
 class OFMNet(nn.Module):
     """
