@@ -7,7 +7,7 @@ from typing import List
 from config.config import Options
 
 def _leaky_relu(x: torch.Tensor) -> torch.Tensor:
-    return F.leaky_relu(x, negative_slope=0.2)
+    return F.leaky_relu(x, negative_slope=0.2, inplace=True)
 
 class SubTreeExtractor(nn.Module):
     """

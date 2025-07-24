@@ -7,6 +7,11 @@ from .feature_extractor import FeatureExtractor
 from .pyramid_flow_estimator import PyramidFlowEstimator
 from .fusion import Fusion
 
+import torch.nn.functional as F
+
+
+def _leaky_relu(x: torch.Tensor) -> torch.Tensor:
+    return F.leaky_relu(x, negative_slope=0.2, inplace=True)
 
 class OFMNet(nn.Module):
     """
@@ -32,6 +37,8 @@ class OFMNet(nn.Module):
         # Fusion (decoder) network
         self.fusion = Fusion(config)
 
+        self.adapterconv = nn.LazyConv2d(3, kernel_size=1, padding=1)
+
     def forward(self, x0: torch.Tensor, x1: torch.Tensor, encoding0: torch.Tensor):
         """
         x0, x1: [B, C, H, W] floats
@@ -42,13 +49,15 @@ class OFMNet(nn.Module):
         img_pyr1 = util.build_image_pyramid(x1, self.config)
 
         enc_pyr = util.build_image_pyramid(encoding0, self.config)
+        enc_pyr2 = util.build_image_pyramid(_leaky_relu(self.adapterconv(encoding0)), self.config)
 
 
         # Extract feature pyramids (Siamese)
         feat_pyr0 = self.feature_extractor(img_pyr0)
         feat_pyr1 = self.feature_extractor(img_pyr1)
 
-        enc_feat_pyr = self.feature_extractor(enc_pyr)
+        ## OG enc_feat_pyr = self.feature_extractor(enc_pyr)
+        enc_feat_pyr = self.feature_extractor(enc_pyr2)
 
 
         # Estimate residual flow pyramids (forward and backward)

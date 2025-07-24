@@ -1,8 +1,8 @@
 import time
 import copy
 from typing import Optional, Dict, Any
+import random
 
-import h5py
 
 import torch
 from torch import nn, optim
@@ -19,7 +19,7 @@ from config.config import Options
 
 def main():
 
-
+    ## OG PARAMS
     pyramid_levels = 7
     fusion_pyramid_levels = 5
     specialized_levels = 3
@@ -27,6 +27,15 @@ def main():
     flow_convs = [3, 3, 3, 3]
     flow_filters = [32, 64, 128, 256]
     filters = 64
+
+    ## LIGHT PARAMS
+    pyramid_levels = 5
+    fusion_pyramid_levels = 4
+    specialized_levels = 2
+    sub_levels = 4
+    flow_convs = [3, 3, 3, 3]
+    flow_filters = [16, 32, 64, 128]
+    filters = 16
 
     learning_rate = 0.0001
     learning_rate_decay_steps = 750000
@@ -67,7 +76,7 @@ def main():
         )
     h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_1.h5'
     transforms = OFMTransforms(1024, max_hole_area=0.0, max_sprinkle_area=0.0)
-    dataset = EncodingDataset(h5_path, transform=transforms)
+    dataset = EncodingDataset(h5_path)
     train_len = int(0.8 * len(dataset))
     val_len   = len(dataset) - train_len
 
@@ -75,17 +84,17 @@ def main():
     torch.manual_seed(42)
     train_ds, val_ds = random_split(dataset, [train_len, val_len])
 
-    train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, num_workers=4)
-    val_loader   = DataLoader(val_ds,   batch_size=32, shuffle=False, num_workers=2)
-    batch_iter = iter(train_loader)   # create an iterator over the DataLoader
-    in0, in1, enc0, enc1 = next(batch_iter) 
+    train_loader = DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=4)
+    val_loader   = DataLoader(val_ds,   batch_size=16, shuffle=False, num_workers=2)
 
-    train_model(model, train_loader, val_loader, optimizer, torch.cuda())
+    train_model(model=model, transforms=transforms, train_loader=train_loader, val_loader=val_loader, optimizer=optimizer, 
+                criterion=nn.L1Loss(), device=torch.device("cuda"), num_epochs=20, scheduler=scheduler)
 
 
 
 def train_model(
     model: nn.Module,
+    transforms: nn.Module,
     train_loader: DataLoader,
     val_loader: Optional[DataLoader],
     optimizer: optim.Optimizer,
@@ -134,6 +143,26 @@ def train_model(
                 x1 = x1.to(device)
                 encoding0 = encoding0.to(device)
                 target = target.to(device)
+
+                hflip = random.choice([True, False])
+                vflip = random.choice([True, False])
+
+                # channels‐first: inp/tgt shape is (B, C, H, W)
+                if hflip:
+                    x0 = x0.flip(dims=[3])
+                    encoding0 = encoding0.flip(dims=[3])
+                    x1 = x1.flip(dims=[3])
+                    target = target.flip(dims=[3])
+                if vflip:
+                    x0 = x0.flip(dims=[2])
+                    encoding0 = encoding0.flip(dims=[2])
+                    x1 = x1.flip(dims=[2])
+                    target = target.flip(dims=[2])
+
+                # 4) optional transforms (e.g. normalization, to‐float, etc.)
+                if transforms is not None:
+                    x0 = transforms(x0)
+                    x1 = transforms(x1)
 
                 optimizer.zero_grad()
                 outputs = model(x0, x1, encoding0)

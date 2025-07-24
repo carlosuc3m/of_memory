@@ -4,13 +4,12 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 class EncodingDataset(Dataset):
-    def __init__(self, h5_path, transform=None):
+    def __init__(self, h5_path):
         """
         h5_path: path to your .h5 file
         transform: optional callable on both input & target tensors
         """
         self.h5_path = h5_path
-        self.transform = transform
         self._h5 = None
         # figure out the length up‐front
         with h5py.File(h5_path, 'r') as f:
@@ -33,42 +32,15 @@ class EncodingDataset(Dataset):
         }
 
         if random.uniform(0, 1) > 0.5:
-            input_1 = torch.from_numpy(arrs['img1'].copy()).unsqueeze(0).float().cuda()
-            enc_1 = torch.from_numpy(arrs['enc1'].copy()).unsqueeze(0).float().cuda()
-            input_2 = torch.from_numpy(arrs['img2'].copy()).unsqueeze(0).float().cuda()
-            enc_2 = torch.from_numpy(arrs['enc2'].copy()).unsqueeze(0).float().cuda()
+            input_1 = torch.from_numpy(arrs['img1']).float()
+            enc_1 = torch.from_numpy(arrs['enc1']).float()
+            input_2 = torch.from_numpy(arrs['img2']).float()
+            enc_2 = torch.from_numpy(arrs['enc2']).float()
         else:
-            input_2 = torch.from_numpy(arrs['img1'].copy()).unsqueeze(0).float().cuda()
-            enc_2 = torch.from_numpy(arrs['enc1'].copy()).unsqueeze(0).float().cuda()
-            input_1 = torch.from_numpy(arrs['img2'].copy()).unsqueeze(0).float().cuda()
-            enc_1 = torch.from_numpy(arrs['enc2'].copy()).unsqueeze(0).float().cuda()
+            input_2 = torch.from_numpy(arrs['img1']).float()
+            enc_2 = torch.from_numpy(arrs['enc1']).float()
+            input_1 = torch.from_numpy(arrs['img2']).float()
+            enc_1 = torch.from_numpy(arrs['enc2']).float()
 
-        hflip = random.choice([True, False])
-        vflip = random.choice([True, False])
-        if not (hflip or vflip):
-            # force at least one
-            if random.random() < 0.5:
-                hflip = True
-            else:
-                vflip = True
-
-        # channels‐first: inp/tgt shape is (C, H, W)
-        if hflip:
-            input_1 = input_1.flip(dims=[2])
-            enc_1 = enc_1.flip(dims=[2])
-            input_2 = input_2.flip(dims=[2])
-            enc_2 = enc_2.flip(dims=[2])
-        if vflip:
-            input_1 = input_1.flip(dims=[1])
-            enc_1 = enc_1.flip(dims=[1])
-            input_2 = input_2.flip(dims=[1])
-            enc_2 = enc_2.flip(dims=[1])
-
-        # 4) optional transforms (e.g. normalization, to‐float, etc.)
-        if self.transform is not None:
-            input_1 = self.transform(input_1)
-            input_2 = self.transform(input_2)
-            enc_1 = self.transform(enc_1)
-            enc_2 = self.transform(enc_2)
 
         return input_1, input_2, enc_1, enc_2
