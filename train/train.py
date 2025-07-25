@@ -31,7 +31,7 @@ def main():
     ## LIGHT PARAMS
     pyramid_levels = 5
     fusion_pyramid_levels = 4
-    specialized_levels = 2
+    specialized_levels = 3
     sub_levels = 4
     flow_convs = [3, 3, 3, 3]
     flow_filters = [16, 32, 64, 128]
@@ -85,7 +85,7 @@ def main():
     train_ds, val_ds = random_split(dataset, [train_len, val_len])
 
     train_loader = DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=4)
-    val_loader   = DataLoader(val_ds,   batch_size=16, shuffle=False, num_workers=2)
+    val_loader   = DataLoader(val_ds,   batch_size=2, shuffle=False, num_workers=2)
 
     train_model(model=model, transforms=transforms, train_loader=train_loader, val_loader=val_loader, optimizer=optimizer, 
                 criterion=nn.L1Loss(), device=torch.device("cuda"), num_epochs=20, scheduler=scheduler)
@@ -194,6 +194,8 @@ def train_model(
                     encoding0 = encoding0.to(device)
                     target = target.to(device)
 
+                    x0 = transforms(x0)
+                    x1 = transforms(x1)
                     outputs = model(x0, x1, encoding0)
                     pred = outputs.get('image', outputs)
                     loss = criterion(pred, target)

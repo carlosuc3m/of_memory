@@ -37,7 +37,10 @@ class OFMNet(nn.Module):
         # Fusion (decoder) network
         self.fusion = Fusion(config)
 
-        self.adapterconv = nn.LazyConv2d(3, kernel_size=1, padding=1)
+        self.adapterconv = nn.LazyConv2d(3, kernel_size=1, padding=0)
+        self.pools = []
+        for i in range(config.fusion_pyramid_levels):
+            self.pools.append(nn.AvgPool2d(kernel_size=16, stride=16, padding=0))
 
     def forward(self, x0: torch.Tensor, x1: torch.Tensor, encoding0: torch.Tensor):
         """
@@ -74,28 +77,29 @@ class OFMNet(nn.Module):
         # Prepare pyramids to warp: stack image + features per level
         to_warp_0_a = util.concatenate_pyramids(enc_pyr[:L], enc_feat_pyr[:L])
         # Warp using backward warping (reads from source via flow)
+        for i in range(L):
+            bwd_flow_pyr[i] = self.pools[i](bwd_flow_pyr[i])
         bwd_warped = util.pyramid_warp(to_warp_0_a, bwd_flow_pyr)
-
+        """
         fwd_flow_on_t1 = util.pyramid_warp(fwd_flow_pyr, bwd_flow_pyr)
         # (b) Invert it (negate) so it tells us where in encoding0 to sample:
         inv_fwd_flow = [ -flow for flow in fwd_flow_on_t1 ]
         # (c) Warp encoding0 by that inverted‐forward field:
         fwd_warped = util.pyramid_warp(to_warp_0_a, inv_fwd_flow)
-
         # Build the aligned pyramid: [warp0, warp1, bwd_flow, fwd_flow]
         aligned = util.concatenate_pyramids(fwd_warped, bwd_warped)
         aligned = util.concatenate_pyramids(aligned, bwd_flow_pyr)
         aligned = util.concatenate_pyramids(aligned, fwd_flow_pyr)
+        """
 
+        aligned = util.concatenate_pyramids(bwd_warped, bwd_flow_pyr)
         # Fuse to get final prediction
         pred = self.fusion(aligned)
-        out = {'image': pred[..., :3]}  # assume final channels include RGB
+        out = {'image': pred}  # assume final channels include RGB
 
         # Optionally add aux outputs for debugging/supervision
         if self.config.use_aux_outputs:
             out.update({
-                'x0_warped': fwd_warped[0][..., :3],
-                'x1_warped': bwd_warped[0][..., :3],
                 'forward_residual_flow_pyramid': fwd_res_flow,
                 'backward_residual_flow_pyramid': bwd_res_flow,
                 'forward_flow_pyramid': fwd_flow_pyr,

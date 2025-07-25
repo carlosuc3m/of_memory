@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from typing import List
 from config.config import Options
 
-_NUMBER_OF_COLOR_CHANNELS = 3
+_NUMBER_OF_COLOR_CHANNELS = 256
 
 class Fusion(nn.Module):
     """
