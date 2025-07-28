@@ -15,6 +15,7 @@ import sys
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 
+MAX_SIZE = 240 * 1024 * 1024 * 1024
 
 # -----------------------------------------------------------------------------
 # 1) Replace this with however you load your encoder.
@@ -95,6 +96,8 @@ def main():
         raise RuntimeError(f"No .mp4 files found in {VIDEO_DIR!r}")
 
     # open HDF5 with resizable datasets
+    unit_size = 3 * TARGET_SIZE[0] * TARGET_SIZE[1] * 2 + 256 * 64 * 64 * 2 * 4
+    max_images = MAX_SIZE // unit_size
     with h5py.File(OUT_H5, 'w') as h5:
         img1_ds = h5.create_dataset('img1',
                                     shape=(0, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
@@ -138,7 +141,7 @@ def main():
                     print(idx)
                     iter_per += 200
                 imgA = frames[i]
-                ind_b = random.randint(max(i- 10, 0), min(i + 10, L))
+                ind_b = random.randint(max(i- MAX_FRAME_DIS, 0), min(i + MAX_FRAME_DIS, L))
                 imgB = frames[ind_b]
                 for _ in range(AUGS_PER_PAIR):
                     a1, a2 = paired_augment(imgA, imgB)
@@ -164,6 +167,12 @@ def main():
                         ds.resize((idx+1, *ds.shape[1:]))
                         ds[idx] = arr
                     idx += 1
+                    if idx > max_images:
+                        break
+                if idx > max_images:
+                    break
+            if idx > max_images:
+                break
 
             print(f"[{os.path.basename(vid_path)}] → total pairs so far: {idx}")
 
