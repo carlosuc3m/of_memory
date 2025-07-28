@@ -88,7 +88,7 @@ def main():
     val_loader   = DataLoader(val_ds,   batch_size=2, shuffle=False, num_workers=2)
 
     train_model(model=model, transforms=transforms, train_loader=train_loader, val_loader=val_loader, optimizer=optimizer, 
-                criterion=nn.L1Loss(), device=torch.device("cuda"), num_epochs=20, scheduler=scheduler)
+                criterion=nn.L1Loss(), device=torch.device("cuda"), num_epochs=400, scheduler=scheduler)
 
 
 
@@ -179,7 +179,8 @@ def train_model(
                 running_loss += loss.item() * x0.size(0)
                 tepoch.set_postfix(train_loss=running_loss / ((tepoch.n + 1)*x0.size(0)))
 
-        epoch_train_loss = running_loss / len(train_loader.dataset)
+            epoch_train_loss = running_loss / len(train_loader.dataset)
+            vepoch.set_postfix(train_loss=epoch_train_loss)
         history['train_loss'].append(epoch_train_loss)
 
         # ——— Validation phase ———
@@ -203,7 +204,8 @@ def train_model(
                     val_running += loss.item() * x0.size(0)
                     vepoch.set_postfix(val_loss=val_running / ((vepoch.n + 1)*x0.size(0)))
 
-            epoch_val_loss = val_running / len(val_loader.dataset)
+                epoch_val_loss = val_running / len(val_loader.dataset)
+                vepoch.set_postfix(val_loss=epoch_val_loss)
             history['val_loss'].append(epoch_val_loss)
 
             # Checkpoint best model
