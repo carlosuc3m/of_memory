@@ -56,7 +56,7 @@ def main():
     model = OFMNet(config)
 
 
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=learning_rate
     )
@@ -138,6 +138,7 @@ def train_model(
         # ——— Training phase ———
         model.train()
         running_loss = 0.0
+        running_seg_loss = 0.0
         with tqdm(train_loader, desc=f"Epoch {epoch}/{num_epochs} [Train]", unit="batch") as tepoch:
             for batch in tepoch:
                 # Unpack your batch: adjust names to your dataset
@@ -186,16 +187,22 @@ def train_model(
                 optimizer.step()
 
                 running_loss += (loss.item() + l2.item() + l3.item() + l4.item() + l5.item()) * x0.size(0)
+                running_seg_loss += l5.item() * x0.size(0)
                 tepoch.set_postfix(train_loss=running_loss / ((tepoch.n + 1)*x0.size(0)))
+                tepoch.set_postfix(train_seg_loss=running_seg_loss / ((tepoch.n + 1)*x0.size(0)))
 
             epoch_train_loss = running_loss / len(train_loader.dataset)
             vepoch.set_postfix(train_loss=epoch_train_loss)
+            epoch_train_seg_loss = running_seg_loss / len(train_loader.dataset)
+            vepoch.set_postfix(train_seg_loss=epoch_train_seg_loss)
         history['train_loss'].append(epoch_train_loss)
+        history['train_seg_loss'].append(epoch_train_seg_loss)
 
         # ——— Validation phase ———
         if val_loader is not None:
             model.eval()
             val_running = 0.0
+            val_seg_running = 0.0
             with torch.no_grad(), tqdm(val_loader, desc=f"Epoch {epoch}/{num_epochs} [Val]  ", unit="batch") as vepoch:
                 for batch in vepoch:
                     x0, x1, encoding0, target = batch
@@ -212,11 +219,16 @@ def train_model(
                     l2, l3, l4, l5 = sam_loss(target, pred)
 
                     val_running += (loss.item() + l2.item() + l3.item() + l4.item() + l5.item()) * x0.size(0)
+                    val_seg_running += l5.item() * x0.size(0)
                     vepoch.set_postfix(val_loss=val_running / ((vepoch.n + 1)*x0.size(0)))
+                    vepoch.set_postfix(val_seg_loss=val_seg_running / ((vepoch.n + 1)*x0.size(0)))
 
                 epoch_val_loss = val_running / len(val_loader.dataset)
+                epoch_val_seg_loss = val_seg_running / len(val_loader.dataset)
                 vepoch.set_postfix(val_loss=epoch_val_loss)
+                vepoch.set_postfix(val_seg_loss=epoch_val_seg_loss)
             history['val_loss'].append(epoch_val_loss)
+            history['val_seg_loss'].append(epoch_val_seg_loss)
 
             # Checkpoint best model
             if epoch_val_loss < best_val_loss:

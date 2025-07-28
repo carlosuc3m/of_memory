@@ -17,7 +17,7 @@ class SAM2Loss(nn.Module):
     Input images are expected in [0,1] RGB; this module multiplies by 255
     and subtracts ImageNet means to match the original TF implementation.
     """
-    def __init__(self, device: torch.device = torch.device('cpu'), loss_weights=[1, 0.5, 0.1, 0.1], eps=1e-6):
+    def __init__(self, device: torch.device = torch.device('cpu'), loss_weights=[1, 0.5, 0.1, 0.5], eps=1e-6):
         super().__init__()
 
         def load_encoder():
