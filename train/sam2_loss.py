@@ -198,7 +198,7 @@ class SAM2Loss(nn.Module):
         t_masks, t_ious, _ = self.predict_batch(
             point_coords_batch=prompts["point_coords_batch"],
             point_labels_batch=prompts["labels"],
-            point_labels_batch=prompts["box_batch"],
+            box_batch=prompts["box_batch"],
             multimask_output=True,
             return_logits=True,
             )
@@ -208,8 +208,8 @@ class SAM2Loss(nn.Module):
 
         s_masks, s_ious, _ = self.sam2_predictor.predict_batch(
             point_coords_batch=prompts["point_coords_batch"],
-            point_labels_batch=prompts["box_batch"],
-            point_labels_batch=prompts["box_batch"],
+            point_labels_batch=prompts["labels"],
+            box_batch=prompts["box_batch"],
             multimask_output=True,
             return_logits=True,
             )
@@ -295,3 +295,10 @@ def create_random_box_prompt():
         pos_1 = random.randint(0, 1024 - side_1)
         pos_2 = random.randint(0, 1024 - side_2)
         return np.array([pos_1, pos_2, side_1, side_2])
+
+
+if __name__ == '__main__':
+    loss = SAM2Loss()
+    enc1 = np.random.rand((2, 256, 64, 64), dtype="float32")
+    enc2 = np.random.rand((2, 256, 64, 64), dtype="float32")
+    loss(enc1, enc2)
