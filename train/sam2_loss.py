@@ -50,9 +50,6 @@ class SAM2Loss(nn.Module):
         It returns a tuple of lists of masks, ious, and low_res_masks_logits.
         """
         num_images = len(self.sam2_predictor._features["image_embed"])
-        all_masks = []
-        all_ious = []
-        all_low_res_masks = []
         for img_idx in range(num_images):
             # Transform input prompts
             point_coords = (
@@ -162,7 +159,7 @@ class SAM2Loss(nn.Module):
             for feat_level in self.sam2_predictor._features["high_res_feats"]
         ]
         low_res_masks, iou_predictions, _, _ = self.sam2_predictor.model.sam_mask_decoder(
-            image_embeddings=self.sam2_predictor_features["image_embed"][img_idx].unsqueeze(0),
+            image_embeddings=self.sam2_predictor._features["image_embed"][img_idx].unsqueeze(0),
             image_pe=self.sam2_predictor.model.sam_prompt_encoder.get_dense_pe(),
             sparse_prompt_embeddings=sparse_embeddings,
             dense_prompt_embeddings=dense_embeddings,
@@ -173,7 +170,7 @@ class SAM2Loss(nn.Module):
 
         # Upscale the masks to the original image resolution
         masks = self.sam2_predictor._transforms.postprocess_masks(
-            low_res_masks, self._orig_hw[img_idx]
+            low_res_masks, self.sam2_predictor._orig_hw[img_idx]
         )
         low_res_masks = torch.clamp(low_res_masks, -32.0, 32.0)
         if not return_logits:
@@ -191,25 +188,26 @@ class SAM2Loss(nn.Module):
         # Scale to [0,255] and subtract mean
         self.sam2_predictor._features = {}
         self.sam2_predictor._features["image_embed"] = gt_encoding
-        self.sam2_predictor._features["high_res"] = []
+        self.sam2_predictor._features["high_res_feats"] = []
+        self.sam2_predictor._orig_hw = [[1024, 1024]] * gt_encoding.shape[0]
 
         prompts = self.create_random_prompts()
 
         t_masks, t_ious, _ = self.predict_batch(
-            point_coords_batch=prompts["point_coords_batch"],
+            point_coords_batch=prompts["point_coords_batch"] if "point_coords_batch" in prompts.keys() else None,
             point_labels_batch=prompts["labels"],
-            box_batch=prompts["box_batch"],
+            box_batch=prompts["box_batch"] if "box_batch" in prompts.keys() else None,
             multimask_output=True,
             return_logits=True,
             )
         self.sam2_predictor._features = {}
         self.sam2_predictor._features["image_embed"] = predicted_encoding
-        self.sam2_predictor._features["high_res"] = []
+        self.sam2_predictor._features["high_res_feats"] = []
 
-        s_masks, s_ious, _ = self.sam2_predictor.predict_batch(
-            point_coords_batch=prompts["point_coords_batch"],
+        s_masks, s_ious, _ = self.predict_batch(
+            point_coords_batch=prompts["point_coords_batch"] if "point_coords_batch" in prompts.keys() else None,
             point_labels_batch=prompts["labels"],
-            box_batch=prompts["box_batch"],
+            box_batch=prompts["box_batch"] if "box_batch" in prompts.keys() else None,
             multimask_output=True,
             return_logits=True,
             )
@@ -293,7 +291,7 @@ def create_random_box_prompt():
         side_1 = random.randint(40, 650)
         ratio = random.uniform(1, 5)
         if random.randint(0, 1) == 0:
-            side_2 = min(1024, int(side_1 * ratio))
+            side_2 = min(1000, int(side_1 * ratio))
         else:
             side_2 = max(40, int(side_1 / ratio))
 
