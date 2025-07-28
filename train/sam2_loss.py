@@ -17,7 +17,7 @@ class SAM2Loss(nn.Module):
     Input images are expected in [0,1] RGB; this module multiplies by 255
     and subtracts ImageNet means to match the original TF implementation.
     """
-    def __init__(self, device: torch.device = torch.device('cpu')):
+    def __init__(self, device: torch.device = torch.device('cpu'), loss_weights=[1, 0.5, 0.1, 0.1], eps=1e-6):
         super().__init__()
 
         def load_encoder():
@@ -34,6 +34,8 @@ class SAM2Loss(nn.Module):
         # Freeze parameters
         for p in self.sam2_predictor.model.parameters():
             p.requires_grad = False
+        self.eps = eps
+        self.ww = loss_weights
 
     def predict_batch(
         self,
@@ -191,9 +193,12 @@ class SAM2Loss(nn.Module):
         self.sam2_predictor._features["image_embed"] = gt_encoding
         self.sam2_predictor._features["high_res"] = []
 
+        prompts = self.create_random_prompts()
+
         t_masks, t_ious, _ = self.predict_batch(
             point_coords_batch=prompts["point_coords_batch"],
-            point_labels_batch=prompts["point_coords_batch"],
+            point_labels_batch=prompts["labels"],
+            point_labels_batch=prompts["box_batch"],
             multimask_output=True,
             return_logits=True,
             )
@@ -203,27 +208,90 @@ class SAM2Loss(nn.Module):
 
         s_masks, s_ious, _ = self.sam2_predictor.predict_batch(
             point_coords_batch=prompts["point_coords_batch"],
-            point_labels_batch=prompts["point_coords_batch"],
+            point_labels_batch=prompts["box_batch"],
+            point_labels_batch=prompts["box_batch"],
             multimask_output=True,
             return_logits=True,
             )
-    
-        return features
-    
-    def create_random_prompts():
+        
+        T = 4.0
+        t_logits_T = t_masks / T
+        s_logits_T = s_masks / T
+
+        t_probs_T = torch.sigmoid(t_logits_T)           # soft targets
+        s_logprobs_T = F.logsigmoid(s_logits_T)         # student log‑probs
+
+        kd_loss = F.kl_div(
+            input    = s_logprobs_T,
+            target   = t_probs_T.detach(),
+            reduction= "batchmean",
+        ) * (T*T)
+
+        # use the softened teacher probabilities as targets
+        bce_loss = F.binary_cross_entropy_with_logits(
+            input = s_masks, 
+            target= t_probs_T.detach(), 
+        )
+        iou_loss = F.mse_loss(
+            input = s_ious, 
+            target= t_ious.detach()
+        )
+
+        p = torch.sigmoid(s_masks)
+        q = (t_probs_T.detach() >= 0.5).float()
+        inter = (p * q).sum(dim=[2,3])
+        union = p.sum(dim=[2,3]) + q.sum(dim=[2,3])
+        dice_loss = 1 - ((2 * inter + self.eps) / (union + self.eps)).mean()
+
+        return self.ww[0] * kd_loss, self.ww[1] * bce_loss, self.ww[2] * iou_loss, self.ww[3] * dice_loss
+
+
+    def create_random_prompts(self):
+        prompts = {}
         if random.randint(0, 1) == 1:
-            return create_random_box_prompt()
+            box, label = self.create_random_box_prompt()
+            prompts["box_batch"] = box
+            prompts["labels"] = label
         else:
-            return create_random_point_prompt()
+            points, labels = self.create_random_point_prompt()
+            prompts["point_coords_batch"] = points
+            prompts["labels"] = labels
+        return prompts
     
-    def create_random_box_prompt():
+
+    def create_random_point_prompt(self):
+        n_batch = self.sam2_predictor._features["image_embed"].shape[0]
         n_prompts = random.randint(0, 1)
         if n_prompts == 0:
             n_prompts = random.randint(2, 5)
+        prompts = np.zeros((n_batch, n_prompts, 2), dtype="uint8")
+        labels = np.ones((n_batch, n_prompts), dtype="uint8")
         prompts = []
         for i in range(n_prompts):
-            prompts.append([random.randint(0, 1024), random.randint(0, 1024)])
-        return np.array(prompts)
+            prompts[0, i] = create_random_point_prompt(1024, 1024)
+            prompts[1, i] = create_random_point_prompt(1024, 1024)
+        return prompts, labels
+
+    def create_random_box_prompt(self):
+        n_batch = self.sam2_predictor._features["image_embed"].shape[0]
+        prompts = np.zeros((n_batch, 4), dtype="uint8")
+        labels = np.ones((n_batch, 1), dtype="uint8")
+        prompts[0] = create_random_box_prompt()
+        prompts[1] = create_random_box_prompt()
+        return prompts, labels
     
-    def create_random_point_prompt():
-        return None
+
+def create_random_point_prompt(max_w, max_h):
+    return np.array([random.randint(0, max_w), random.randint(0, max_h)])
+
+def create_random_box_prompt():
+        side_1 = random.randint(40, 650)
+        ratio = random.uniform(1, 5)
+        if random.randint(0, 1) == 0:
+            side_2 = min(1024, int(side_1 * ratio))
+        else:
+            side_2 = max(40, int(side_1 / ratio))
+
+        pos_1 = random.randint(0, 1024 - side_1)
+        pos_2 = random.randint(0, 1024 - side_2)
+        return np.array([pos_1, pos_2, side_1, side_2])
