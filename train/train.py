@@ -13,7 +13,7 @@ from of_memory.model import OFMNet
 from of_memory.ofm_transforms import OFMTransforms
 from of_memory.encoding_dataset import EncodingDataset
 
-from .sam2_loss import SAM2Loss
+from sam2_loss import SAM2Loss
 
 from config.config import Options
 
@@ -173,12 +173,9 @@ def train_model(
                 # If model returns dict:
                 pred = outputs.get('image', outputs)
                 loss = criterion(pred, target)
-                loss.backward()
-                l2, l3, l4, l5 = sam_loss(target, pred)
-                l2.backward()
-                l3.backward()
-                l4.backward()
-                l5.backward()
+                l3, l4, l5 = sam_loss(target, pred)
+                total_loss = loss + l3 + l4 + l5
+                total_loss.backward()
 
 
                 if grad_clip is not None:
@@ -186,10 +183,11 @@ def train_model(
 
                 optimizer.step()
 
-                running_loss += (loss.item() + l2.item() + l3.item() + l4.item() + l5.item()) * x0.size(0)
+                running_loss += (total_loss.item()) * x0.size(0)
                 running_seg_loss += l5.item() * x0.size(0)
-                tepoch.set_postfix(train_loss=running_loss / ((tepoch.n + 1)*x0.size(0)))
-                tepoch.set_postfix(train_seg_loss=running_seg_loss / ((tepoch.n + 1)*x0.size(0)))
+                tepoch.set_postfix(train_loss=running_loss / ((tepoch.n + 1)*x0.size(0)),
+                                   train_seg_loss=running_seg_loss / ((tepoch.n + 1)*x0.size(0))
+                                   )
 
             epoch_train_loss = running_loss / len(train_loader.dataset)
             vepoch.set_postfix(train_loss=epoch_train_loss)
@@ -216,12 +214,12 @@ def train_model(
                     outputs = model(x0, x1, encoding0)
                     pred = outputs.get('image', outputs)
                     loss = criterion(pred, target)
-                    l2, l3, l4, l5 = sam_loss(target, pred)
+                    l3, l4, l5 = sam_loss(target, pred)
 
-                    val_running += (loss.item() + l2.item() + l3.item() + l4.item() + l5.item()) * x0.size(0)
+                    val_running += (loss.item() + l3.item() + l4.item() + l5.item()) * x0.size(0)
                     val_seg_running += l5.item() * x0.size(0)
-                    vepoch.set_postfix(val_loss=val_running / ((vepoch.n + 1)*x0.size(0)))
-                    vepoch.set_postfix(val_seg_loss=val_seg_running / ((vepoch.n + 1)*x0.size(0)))
+                    vepoch.set_postfix(val_loss=val_running / ((vepoch.n + 1)*x0.size(0)),
+                                       val_seg_loss=val_seg_running / ((vepoch.n + 1)*x0.size(0)))
 
                 epoch_val_loss = val_running / len(val_loader.dataset)
                 epoch_val_seg_loss = val_seg_running / len(val_loader.dataset)

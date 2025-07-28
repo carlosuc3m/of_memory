@@ -217,6 +217,7 @@ class SAM2Loss(nn.Module):
         s_logits_T = s_masks / T
 
         t_probs_T = torch.sigmoid(t_logits_T)           # soft targets
+        """
         s_logprobs_T = F.logsigmoid(s_logits_T)         # student log‑probs
 
         kd_loss = F.kl_div(
@@ -224,6 +225,12 @@ class SAM2Loss(nn.Module):
             target   = t_probs_T.detach(),
             reduction= "batchmean",
         ) * (T*T)
+
+        kd_loss = F.binary_cross_entropy_with_logits(
+            input  = s_logits_T,
+            target = t_probs_T
+        ) * (T*T)
+        """
 
         # use the softened teacher probabilities as targets
         bce_loss = F.binary_cross_entropy_with_logits(
@@ -241,7 +248,8 @@ class SAM2Loss(nn.Module):
         union = p.sum(dim=[2,3]) + q.sum(dim=[2,3])
         dice_loss = 1 - ((2 * inter + self.eps) / (union + self.eps)).mean()
 
-        return self.ww[0] * kd_loss, self.ww[1] * bce_loss, self.ww[2] * iou_loss, self.ww[3] * dice_loss
+        #return self.ww[0] * kd_loss, self.ww[1] * bce_loss, self.ww[2] * iou_loss, self.ww[3] * dice_loss
+        return self.ww[1] * bce_loss, self.ww[2] * iou_loss, self.ww[3] * dice_loss
 
 
     def create_random_prompts(self):
