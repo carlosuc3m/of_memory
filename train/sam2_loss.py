@@ -260,24 +260,29 @@ class SAM2Loss(nn.Module):
     
 
     def create_random_point_prompt(self):
+        """
+        Point prompts are (x, y)
+        """
         n_batch = self.sam2_predictor._features["image_embed"].shape[0]
         n_prompts = random.randint(0, 1)
         if n_prompts == 0:
             n_prompts = random.randint(2, 5)
-        prompts = np.zeros((n_batch, n_prompts, 2), dtype="uint8")
-        labels = np.ones((n_batch, n_prompts), dtype="uint8")
-        prompts = []
+        prompts = np.zeros((n_batch, n_prompts, 2), dtype="uint32")
+        labels = np.ones((n_batch, n_prompts), dtype="uint32")
         for i in range(n_prompts):
-            prompts[0, i] = create_random_point_prompt(1024, 1024)
-            prompts[1, i] = create_random_point_prompt(1024, 1024)
+            for b in range(n_batch):
+                prompts[b, i] = create_random_point_prompt(1024, 1024)
         return prompts, labels
 
     def create_random_box_prompt(self):
+        """
+        Box prompts are (x0, y0, x1, y1)
+        """
         n_batch = self.sam2_predictor._features["image_embed"].shape[0]
-        prompts = np.zeros((n_batch, 4), dtype="uint8")
-        labels = np.ones((n_batch, 1), dtype="uint8")
-        prompts[0] = create_random_box_prompt()
-        prompts[1] = create_random_box_prompt()
+        prompts = np.zeros((n_batch, 4), dtype="uint32")
+        labels = np.ones((n_batch, 1), dtype="uint32")
+        for i in range(n_batch):
+            prompts[i] = create_random_box_prompt()
         return prompts, labels
     
 
@@ -294,11 +299,11 @@ def create_random_box_prompt():
 
         pos_1 = random.randint(0, 1024 - side_1)
         pos_2 = random.randint(0, 1024 - side_2)
-        return np.array([pos_1, pos_2, side_1, side_2])
+        return np.array([pos_1, pos_2, pos_1 + side_1, pos_2 + side_2])
 
 
 if __name__ == '__main__':
     loss = SAM2Loss()
-    enc1 = np.random.rand((2, 256, 64, 64), dtype="float32")
-    enc2 = np.random.rand((2, 256, 64, 64), dtype="float32")
+    enc1 = torch.from_numpy(np.random.random_sample((2, 256, 64, 64)).astype("float32")).cpu()
+    enc2 = torch.from_numpy(np.random.random_sample((2, 256, 64, 64)).astype("float32")).cpu()
     loss(enc1, enc2)
