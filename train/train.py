@@ -9,6 +9,7 @@ from torch import nn, optim
 from torch.utils.data import random_split, DataLoader
 from tqdm import tqdm
 
+from of_memory.unet import UNet
 from of_memory.model import OFMNet
 from of_memory.ofm_transforms import OFMTransforms
 from of_memory.encoding_dataset import EncodingDataset
@@ -17,7 +18,7 @@ from sam2_loss import SAM2Loss
 
 from config.config import Options
 
-
+from torch.amp import autocast, GradScaler
 
 def main():
 
@@ -39,7 +40,8 @@ def main():
     flow_filters = [16, 32, 64, 128]
     filters = 16
 
-    learning_rate = 0.0001
+    ## OG learning_rate = 0.0001
+    learning_rate = 0.0003
     learning_rate_decay_steps = 750000
     learning_rate_decay_rate = 0.464158
     learning_rate_staircase = True
@@ -53,8 +55,8 @@ def main():
                             filters=filters,
                             use_aux_outputs=True)
 
-    model = OFMNet(config)
-
+    #model = OFMNet(config)
+    model = UNet(3, 256)
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -126,30 +128,32 @@ def train_model(
           - 'history': { 'train_loss': [...], 'val_loss': [...] },
           - 'best_epoch': int index of best validation.
     """
-    sam_loss = SAM2Loss(torch.device("cuda"))
+    #sam_loss = SAM2Loss(torch.device("cuda"))
     since = time.time()
     best_model_wts = copy.deepcopy(model.state_dict())
     best_val_loss = float('inf')
-    history = {'train_loss': [], 'val_loss': []}
+    history = {'train_loss': [], 'val_loss': [], 'train_seg_loss': [], 'val_seg_loss': []}
 
     model.to(device)
+    scaler = GradScaler("cuda")
 
+    batch = next(iter(train_loader))
     for epoch in range(1, num_epochs + 1):
         # ——— Training phase ———
         model.train()
         running_loss = 0.0
         running_seg_loss = 0.0
         with tqdm(train_loader, desc=f"Epoch {epoch}/{num_epochs} [Train]", unit="batch") as tepoch:
-            for batch in tepoch:
+            for batch_ in tepoch:
                 # Unpack your batch: adjust names to your dataset
                 x0, x1, encoding0, target = batch  
-                x0 = x0.to(device)
+                #x0 = x0.to(device)
                 x1 = x1.to(device)
-                encoding0 = encoding0.to(device)
+                #encoding0 = encoding0.to(device)
                 target = target.to(device)
 
-                hflip = random.choice([True, False])
-                vflip = random.choice([True, False])
+                hflip = False #random.choice([True, False])
+                vflip = False #random.choice([True, False])
 
                 # channels‐first: inp/tgt shape is (B, C, H, W)
                 if hflip:
@@ -169,35 +173,36 @@ def train_model(
                     x1 = transforms(x1)
 
                 optimizer.zero_grad()
-                outputs = model(x0, x1, encoding0)
-                # If model returns dict:
-                pred = outputs.get('image', outputs)
-                loss = criterion(pred, target)
-                l3, l4, l5 = sam_loss(target, pred)
-                total_loss = loss + l3 + l4 + l5
-                total_loss.backward()
+                #outputs = model(x0, x1, encoding0)
+                with autocast("cuda", dtype=torch.bfloat16):
+                    pred = model(x1)
+                    # If model returns dict:
+                    #pred = outputs.get('image', outputs)
+                    loss = criterion(pred, target)
+                    #l3, l4 = sam_loss(target, pred)
+                    total_loss = loss# + l3 + l4
+                scaler.scale(total_loss).backward()
 
 
                 if grad_clip is not None:
                     nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
 
-                optimizer.step()
+                scaler.step(optimizer)
+                scaler.update()
 
                 running_loss += (total_loss.item()) * x0.size(0)
-                running_seg_loss += l5.item() * x0.size(0)
-                tepoch.set_postfix(train_loss=running_loss / ((tepoch.n + 1)*x0.size(0)),
-                                   train_seg_loss=running_seg_loss / ((tepoch.n + 1)*x0.size(0))
+                #running_seg_loss += l3.item() * x0.size(0)
+                tepoch.set_postfix(train_loss=f"{(running_loss / ((tepoch.n + 1)*x0.size(0))):.6f}",
+                                   #train_seg_loss=f"{(running_seg_loss / ((tepoch.n + 1)*x0.size(0))):.6f}"
                                    )
-
             epoch_train_loss = running_loss / len(train_loader.dataset)
-            vepoch.set_postfix(train_loss=epoch_train_loss)
             epoch_train_seg_loss = running_seg_loss / len(train_loader.dataset)
-            vepoch.set_postfix(train_seg_loss=epoch_train_seg_loss)
+            tepoch.set_postfix(train_loss=epoch_train_loss, train_seg_loss=epoch_train_seg_loss)
         history['train_loss'].append(epoch_train_loss)
         history['train_seg_loss'].append(epoch_train_seg_loss)
 
         # ——— Validation phase ———
-        if val_loader is not None:
+        if val_loader is not None and False:
             model.eval()
             val_running = 0.0
             val_seg_running = 0.0
@@ -214,17 +219,16 @@ def train_model(
                     outputs = model(x0, x1, encoding0)
                     pred = outputs.get('image', outputs)
                     loss = criterion(pred, target)
-                    l3, l4, l5 = sam_loss(target, pred)
+                    l3, l4 = sam_loss(target, pred)
 
-                    val_running += (loss.item() + l3.item() + l4.item() + l5.item()) * x0.size(0)
-                    val_seg_running += l5.item() * x0.size(0)
+                    val_running += (loss.item() + l3.item() + l4.item()) * x0.size(0)
+                    val_seg_running += l3.item() * x0.size(0)
                     vepoch.set_postfix(val_loss=val_running / ((vepoch.n + 1)*x0.size(0)),
                                        val_seg_loss=val_seg_running / ((vepoch.n + 1)*x0.size(0)))
 
                 epoch_val_loss = val_running / len(val_loader.dataset)
                 epoch_val_seg_loss = val_seg_running / len(val_loader.dataset)
-                vepoch.set_postfix(val_loss=epoch_val_loss)
-                vepoch.set_postfix(val_seg_loss=epoch_val_seg_loss)
+                vepoch.set_postfix(val_loss=epoch_val_loss, val_seg_loss=epoch_val_seg_loss)
             history['val_loss'].append(epoch_val_loss)
             history['val_seg_loss'].append(epoch_val_seg_loss)
 
