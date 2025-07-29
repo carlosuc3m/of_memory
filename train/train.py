@@ -78,7 +78,7 @@ def main():
             optimizer,
             gamma=gamma
         )
-    h5_path = '/kaggle/working/of_memory/data_pairs_1.h5'
+    h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_1.h5'
     transforms = OFMTransforms(1024, max_hole_area=0.0, max_sprinkle_area=0.0)
     dataset = EncodingDataset(h5_path)
     train_len = int(0.8 * len(dataset))
