@@ -32,13 +32,12 @@ class OFMNet(nn.Module):
 
         # Siamese feature extractor
         self.feature_extractor = FeatureExtractor(config)
-        self.feature_extractor_enc = FeatureExtractor(config)
         # Shared flow predictor
         self.predict_flow = PyramidFlowEstimator(config)
         # Fusion (decoder) network
         self.fusion = Fusion(config)
 
-        self.adapterconv = nn.LazyConv2d(3, kernel_size=1, padding=0)
+        self.adapterconv = nn.LazyConv2d(256, kernel_size=1, padding=0)
         self.pools = []
         for i in range(config.fusion_pyramid_levels):
             self.pools.append(nn.AvgPool2d(kernel_size=16, stride=16, padding=0))
@@ -49,10 +48,11 @@ class OFMNet(nn.Module):
         time:  [B] or [B,1] float in [0,1]; we fix to 0.5 by default.
         """
         # Build image pyramids: list of tensors from full res downwards
-        img_pyr0 = util.build_image_pyramid(x0, self.config)
-        img_pyr1 = util.build_image_pyramid(x1, self.config)
+        img_pyr0 = util.build_image_pyramid(_leaky_relu(self.adapterconv(x0)), self.config)
+        img_pyr1 = util.build_image_pyramid(_leaky_relu(self.adapterconv(x1)), self.config)
 
         enc_pyr = util.build_image_pyramid(encoding0, self.config)
+        #enc_pyr2 = util.build_image_pyramid(_leaky_relu(self.adapterconv(encoding0)), self.config)
 
 
         # Extract feature pyramids (Siamese)
@@ -60,7 +60,7 @@ class OFMNet(nn.Module):
         feat_pyr1 = self.feature_extractor(img_pyr1)
 
         ## OG enc_feat_pyr = self.feature_extractor(enc_pyr)
-        enc_feat_pyr = self.feature_extractor_enc(enc_pyr)
+        enc_feat_pyr = self.feature_extractor(enc_pyr)
 
 
         # Estimate residual flow pyramids (forward and backward)

@@ -9,6 +9,7 @@ from torch import nn, optim
 from torch.utils.data import random_split, DataLoader
 from tqdm import tqdm
 
+from of_memory.resnet import ResNet
 from of_memory.unet import UNet
 from of_memory.model import OFMNet
 from of_memory.ofm_transforms import OFMTransforms
@@ -55,12 +56,13 @@ def main():
                             filters=filters,
                             use_aux_outputs=True)
 
-    #model = OFMNet(config)
-    model = UNet(3, 256)
+    model = OFMNet(config)
+    #model = ResNet(256)
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
-        lr=learning_rate
+        lr=learning_rate,
+        weight_decay=0.001
     )
 
     if learning_rate_staircase:
@@ -92,7 +94,7 @@ def main():
     val_loader   = DataLoader(val_ds,   batch_size=2, shuffle=False, num_workers=2)
 
     train_model(model=model, transforms=transforms, train_loader=train_loader, val_loader=val_loader, optimizer=optimizer, 
-                criterion=nn.L1Loss(), device=torch.device("cuda"), num_epochs=400, scheduler=scheduler)
+                criterion=nn.HuberLoss(), device=torch.device("cuda"), num_epochs=400, scheduler=scheduler)
 
 
 
@@ -137,23 +139,22 @@ def train_model(
     model.to(device)
     scaler = GradScaler("cuda")
 
-    batch = next(iter(train_loader))
     for epoch in range(1, num_epochs + 1):
         # ——— Training phase ———
         model.train()
         running_loss = 0.0
         running_seg_loss = 0.0
         with tqdm(train_loader, desc=f"Epoch {epoch}/{num_epochs} [Train]", unit="batch") as tepoch:
-            for batch_ in tepoch:
+            for batch in tepoch:
                 # Unpack your batch: adjust names to your dataset
-                x0, x1, encoding0, target = batch  
-                #x0 = x0.to(device)
+                x0, x1, encoding0, target = batch
+                x0 = x0.to(device)
                 x1 = x1.to(device)
-                #encoding0 = encoding0.to(device)
+                encoding0 = encoding0.to(device)
                 target = target.to(device)
 
-                hflip = False #random.choice([True, False])
-                vflip = False #random.choice([True, False])
+                hflip = random.choice([True, False])
+                vflip = random.choice([True, False])
 
                 # channels‐first: inp/tgt shape is (B, C, H, W)
                 if hflip:
@@ -173,11 +174,10 @@ def train_model(
                     x1 = transforms(x1)
 
                 optimizer.zero_grad()
-                #outputs = model(x0, x1, encoding0)
                 with autocast("cuda", dtype=torch.bfloat16):
-                    pred = model(x1)
+                    outputs = model(x0, x1, encoding0)
                     # If model returns dict:
-                    #pred = outputs.get('image', outputs)
+                    pred = outputs.get('image', outputs)
                     loss = criterion(pred, target)
                     #l3, l4 = sam_loss(target, pred)
                     total_loss = loss# + l3 + l4
