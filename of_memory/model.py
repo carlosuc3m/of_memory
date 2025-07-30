@@ -64,21 +64,21 @@ class OFMNet(nn.Module):
 
 
         # Estimate residual flow pyramids (forward and backward)
-        fwd_res_flow = self.predict_flow(feat_pyr0, feat_pyr1)
+        #fwd_res_flow = self.predict_flow(feat_pyr0, feat_pyr1)
         bwd_res_flow = self.predict_flow(feat_pyr1, feat_pyr0)
 
         # Synthesize full flows and truncate to fusion levels
-        fwd_flow_pyr = util.flow_pyramid_synthesis(fwd_res_flow)
+        #fwd_flow_pyr = util.flow_pyramid_synthesis(fwd_res_flow)
         bwd_flow_pyr = util.flow_pyramid_synthesis(bwd_res_flow)
         L = self.config.fusion_pyramid_levels
-        fwd_flow_pyr = fwd_flow_pyr[:L]
+        #fwd_flow_pyr = fwd_flow_pyr[:L]
         bwd_flow_pyr = bwd_flow_pyr[:L]
 
         # Prepare pyramids to warp: stack image + features per level
         to_warp_0_a = util.concatenate_pyramids(enc_pyr[:L], enc_feat_pyr[:L])
         # Warp using backward warping (reads from source via flow)
         for i in range(L):
-            bwd_flow_pyr[i] = self.pools[i](bwd_flow_pyr[i])
+            bwd_flow_pyr[i] = self.pools[i](bwd_flow_pyr[i] / 16.0)
         bwd_warped = util.pyramid_warp(to_warp_0_a, bwd_flow_pyr)
         """
         fwd_flow_on_t1 = util.pyramid_warp(fwd_flow_pyr, bwd_flow_pyr)
@@ -100,9 +100,9 @@ class OFMNet(nn.Module):
         # Optionally add aux outputs for debugging/supervision
         if self.config.use_aux_outputs:
             out.update({
-                'forward_residual_flow_pyramid': fwd_res_flow,
+                #'forward_residual_flow_pyramid': fwd_res_flow,
                 'backward_residual_flow_pyramid': bwd_res_flow,
-                'forward_flow_pyramid': fwd_flow_pyr,
+                #'forward_flow_pyramid': fwd_flow_pyr,
                 'backward_flow_pyramid': bwd_flow_pyr,
             })
 

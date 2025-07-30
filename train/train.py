@@ -5,6 +5,7 @@ import random
 
 
 import torch
+import os
 from torch import nn, optim
 from torch.utils.data import random_split, DataLoader
 from tqdm import tqdm
@@ -62,7 +63,6 @@ def main():
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=learning_rate,
-        weight_decay=0.001
     )
 
     if learning_rate_staircase:
@@ -139,6 +139,7 @@ def train_model(
     model.to(device)
     scaler = GradScaler("cuda")
 
+    accum_steps = 32
     for epoch in range(1, num_epochs + 1):
         # ——— Training phase ———
         model.train()
@@ -257,4 +258,5 @@ def train_model(
 
 
 if __name__ == '__main__':
+  os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
   main()
