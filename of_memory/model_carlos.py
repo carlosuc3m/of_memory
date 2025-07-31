@@ -90,6 +90,7 @@ class OFMNet(nn.Module):
 
         # Estimate residual flow pyramids (forward and backward)
         #fwd_res_flow = self.predict_flow(feat_pyr0, feat_pyr1)
+        print("predict flow")
         bwd_res_flow = self.predict_flow(feat_pyr1, feat_pyr0)
 
         # Synthesize full flows and truncate to fusion levels
