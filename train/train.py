@@ -167,11 +167,6 @@ def train_model(
                     x1 = x1.flip(dims=[2])
                     target = target.flip(dims=[2])
 
-                # 4) optional transforms (e.g. normalization, to‐float, etc.)
-                if transforms is not None:
-                    x0 = transforms(x0)
-                    x1 = transforms(x1)
-
                 optimizer.zero_grad()
                 with autocast("cuda", dtype=torch.bfloat16):
                     outputs = model(x0, x1, encoding0)
