@@ -142,6 +142,7 @@ def train_model(
         # ——— Training phase ———
         model.train()
         running_loss = 0.0
+        num_samples = 0
         running_seg_loss = 0.0
         with tqdm(train_loader, desc=f"Epoch {epoch}/{num_epochs} [Train]", unit="batch") as tepoch:
             for batch in tepoch:
@@ -186,8 +187,9 @@ def train_model(
                     scaler.update()
 
                     running_loss += (total_loss.item()) * x0.size(0)
+                    num_samples += x0.size(0)
                     #running_seg_loss += l3.item() * x0.size(0)
-                    tepoch.set_postfix(train_loss=f"{(running_loss / ((tepoch.n + 1)*x0.size(0))):.6f}",
+                    tepoch.set_postfix(train_loss=f"{(running_loss / num_samples):.6f}",
                                     #train_seg_loss=f"{(running_seg_loss / ((tepoch.n + 1)*x0.size(0))):.6f}"
                                     )
                 epoch_train_loss = running_loss / len(train_loader.dataset)
