@@ -38,7 +38,7 @@ def main():
     sub_levels = 4
     flow_convs = [3, 3, 3, 3]
     flow_filters = [16, 32, 64, 128]
-    filters = 16
+    filters = 8
 
     ## OG learning_rate = 0.0001
     learning_rate = 0.0003
@@ -78,7 +78,7 @@ def main():
             optimizer,
             gamma=gamma
         )
-    h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_1.h5'
+    h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_1_toy.h5'
     transforms = OFMTransforms(1024, max_hole_area=0.0, max_sprinkle_area=0.0)
     dataset = EncodingDataset(h5_path)
     train_len = int(0.8 * len(dataset))
@@ -88,7 +88,7 @@ def main():
     torch.manual_seed(42)
     train_ds, val_ds = random_split(dataset, [train_len, val_len])
 
-    train_loader = DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=4)
+    train_loader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=4)
     val_loader   = DataLoader(val_ds,   batch_size=2, shuffle=False, num_workers=2)
 
     train_model(model=model, transforms=transforms, train_loader=train_loader, val_loader=val_loader, optimizer=optimizer, 
@@ -145,51 +145,52 @@ def train_model(
         running_seg_loss = 0.0
         with tqdm(train_loader, desc=f"Epoch {epoch}/{num_epochs} [Train]", unit="batch") as tepoch:
             for batch in tepoch:
-                # Unpack your batch: adjust names to your dataset
-                x0, x1, encoding0, target = batch
-                x0 = x0.to(device)
-                x1 = x1.to(device)
-                encoding0 = encoding0.to(device)
-                target = target.to(device)
+                for ifadsfwr in range(1000):
+                    # Unpack your batch: adjust names to your dataset
+                    x0, x1, encoding0, target = batch
+                    x0 = x0.to(device)
+                    x1 = x1.to(device)
+                    encoding0 = encoding0.to(device)
+                    target = target.to(device)
 
-                hflip = random.choice([True, False])
-                vflip = random.choice([True, False])
+                    hflip = random.choice([True, False])
+                    vflip = random.choice([True, False])
 
-                # channels‐first: inp/tgt shape is (B, C, H, W)
-                if hflip:
-                    x0 = x0.flip(dims=[3])
-                    encoding0 = encoding0.flip(dims=[3])
-                    x1 = x1.flip(dims=[3])
-                    target = target.flip(dims=[3])
-                if vflip:
-                    x0 = x0.flip(dims=[2])
-                    encoding0 = encoding0.flip(dims=[2])
-                    x1 = x1.flip(dims=[2])
-                    target = target.flip(dims=[2])
+                    # channels‐first: inp/tgt shape is (B, C, H, W)
+                    if hflip and False:
+                        x0 = x0.flip(dims=[3])
+                        encoding0 = encoding0.flip(dims=[3])
+                        x1 = x1.flip(dims=[3])
+                        target = target.flip(dims=[3])
+                    if vflip and False:
+                        x0 = x0.flip(dims=[2])
+                        encoding0 = encoding0.flip(dims=[2])
+                        x1 = x1.flip(dims=[2])
+                        target = target.flip(dims=[2])
 
-                optimizer.zero_grad()
-                with autocast("cuda", dtype=torch.bfloat16):
-                    outputs = model(x0, x1, encoding0)
-                    # If model returns dict:
-                    pred = outputs.get('image', outputs)
-                    loss = criterion(pred, target)
-                    #l3, l4 = sam_loss(target, pred)
-                    total_loss = loss# + l3 + l4
-                scaler.scale(total_loss).backward()
+                    optimizer.zero_grad()
+                    with autocast("cuda", dtype=torch.bfloat16):
+                        outputs = model(x0, x1, encoding0)
+                        # If model returns dict:
+                        pred = outputs.get('image', outputs)
+                        loss = criterion(pred, target)
+                        #l3, l4 = sam_loss(target, pred)
+                        total_loss = loss# + l3 + l4
+                    scaler.scale(total_loss).backward()
 
 
-                if grad_clip is not None:
-                    nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                    if grad_clip is not None:
+                        nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
 
-                scaler.step(optimizer)
-                scaler.update()
+                    scaler.step(optimizer)
+                    scaler.update()
 
-                running_loss += (total_loss.item()) * x0.size(0)
-                #running_seg_loss += l3.item() * x0.size(0)
-                tepoch.set_postfix(train_loss=f"{(running_loss / ((tepoch.n + 1)*x0.size(0))):.6f}",
-                                   #train_seg_loss=f"{(running_seg_loss / ((tepoch.n + 1)*x0.size(0))):.6f}"
-                                   )
-            epoch_train_loss = running_loss / len(train_loader.dataset)
+                    running_loss += (total_loss.item()) * x0.size(0)
+                    #running_seg_loss += l3.item() * x0.size(0)
+                    tepoch.set_postfix(train_loss=f"{(running_loss / ((tepoch.n + 1)*x0.size(0))):.6f}",
+                                    #train_seg_loss=f"{(running_seg_loss / ((tepoch.n + 1)*x0.size(0))):.6f}"
+                                    )
+                epoch_train_loss = running_loss / len(train_loader.dataset)
             epoch_train_seg_loss = running_seg_loss / len(train_loader.dataset)
             tepoch.set_postfix(train_loss=epoch_train_loss, train_seg_loss=epoch_train_seg_loss)
         history['train_loss'].append(epoch_train_loss)
