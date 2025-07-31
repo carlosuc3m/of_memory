@@ -37,14 +37,14 @@ class OFMNet(nn.Module):
         # Fusion (decoder) network
         self.fusion = Fusion(config)
 
-        self.shared_adapter = [nn.LazyConv2d(256, kernel_size=3, padding=1),
+        self.shared_adapter = nn.ModuleList([nn.LazyConv2d(256, kernel_size=3, padding=1),
                                nn.LazyConv2d(256, kernel_size=7, padding=3),
-                               nn.LazyConv2d(256, kernel_size=1, padding=0)]
-        self.non_shared_adapter = [[]]
+                               nn.LazyConv2d(256, kernel_size=1, padding=0)])
+        self.non_shared_adapter = nn.ModuleList()
         for i in range(config.specialized_levels):
-            self.non_shared_adapter.append([[nn.LazyConv2d(256, kernel_size=3, padding=1),
+            self.non_shared_adapter.append(nn.ModuleList([nn.LazyConv2d(256, kernel_size=3, padding=1),
                                              nn.LazyConv2d(256, kernel_size=7, padding=3),
-                                             nn.LazyConv2d(256, kernel_size=1, padding=0)]])
+                                             nn.LazyConv2d(256, kernel_size=1, padding=0)]))
 
     def forward(self, x0: torch.Tensor, x1: torch.Tensor, encoding0: torch.Tensor):
         """
@@ -70,11 +70,11 @@ class OFMNet(nn.Module):
                 encoding0 = _leaky_relu(self.shared_adapter[1](encoding0))
                 encoding0 = self.shared_adapter[2](encoding0)
             else:
-                encoding0 = _leaky_relu(self.shared_adapter[i - self.config.specialized_levels][0](encoding0))
+                encoding0 = _leaky_relu(self.non_shared_adapter[i - self.config.specialized_levels][0](encoding0))
                 encoding0 = F.interpolate(encoding0, size=(encoding0.shape[2] * 2, encoding0.shape[2] * 2),
                                 mode='bilinear', align_corners=True)
-                encoding0 = _leaky_relu(self.shared_adapter[i - self.config.specialized_levels][1](encoding0))
-                encoding0 = self.shared_adapter[i - self.config.specialized_levels][2](encoding0)
+                encoding0 = _leaky_relu(self.non_shared_adapter[i - self.config.specialized_levels][1](encoding0))
+                encoding0 = self.non_shared_adapter[i - self.config.specialized_levels][2](encoding0)
             enc_pyr.append(encoding0)
 
         enc_pyr = reversed(enc_pyr)

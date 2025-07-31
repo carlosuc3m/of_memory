@@ -33,7 +33,7 @@ def main():
 
     ## LIGHT PARAMS
     pyramid_levels = 5
-    fusion_pyramid_levels = 4
+    fusion_pyramid_levels = 5
     specialized_levels = 3
     sub_levels = 4
     flow_convs = [3, 3, 3, 3]
