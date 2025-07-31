@@ -109,7 +109,8 @@ class PyramidFlowEstimator(nn.Module):
             # Update the flow by adding the residual
             v = v + v_res
         with torch.no_grad():
-            mse = F.mse_loss(feat_pyr_a[0], warped_b) 
+            mse = F.mse_loss(feat_pyr_a[0], warped_b)
+        print("")
         print(f"[DEBUG] level {0} MSE = {mse.item():.6f}")
         # Return in finest-first order
         return list(reversed(residuals))
