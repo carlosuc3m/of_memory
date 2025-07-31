@@ -10,9 +10,7 @@ from torch import nn, optim
 from torch.utils.data import random_split, DataLoader
 from tqdm import tqdm
 
-from of_memory.resnet import ResNet
-from of_memory.unet import UNet
-from of_memory.model import OFMNet
+from of_memory.model_carlos import OFMNet
 from of_memory.ofm_transforms import OFMTransforms
 from of_memory.encoding_dataset import EncodingDataset
 
