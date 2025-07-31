@@ -116,9 +116,9 @@ class OFMNet(nn.Module):
         """
 
         aligned = util.concatenate_pyramids(bwd_warped, bwd_flow_pyr)
-        print(bwd_warped.shape)
-        print(bwd_flow_pyr.shape)
-        print(aligned.shape)
+        print(bwd_warped[0].shape)
+        print(bwd_flow_pyr[0].shape)
+        print(aligned[0].shape)
         # Fuse to get final prediction
         pred = self.fusion(aligned)
         out = {'image': pred}  # assume final channels include RGB
