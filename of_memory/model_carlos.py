@@ -77,7 +77,7 @@ class OFMNet(nn.Module):
                 encoding0 = self.non_shared_adapter[i - self.config.specialized_levels][2](encoding0)
             enc_pyr.append(encoding0)
 
-        enc_pyr = reversed(enc_pyr)
+        enc_pyr = list(reversed(enc_pyr))
         #enc_pyr2 = util.build_image_pyramid(_leaky_relu(self.adapterconv(encoding0)), self.config)
 
 
