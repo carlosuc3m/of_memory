@@ -63,22 +63,44 @@ class OFMNet(nn.Module):
 
         enc_pyr = [encoding0]
         for i in range(levels - 1):
-            encoding0 = F.avg_pool2d(encoding0, kernel_size=2, stride=2, padding=0)
+            if i < levels - self.config.specialized_levels - 1:
+                encoding0 = _leaky_relu(self.shared_adapter[0](encoding0))
+                encoding0 = F.interpolate(encoding0, size=(encoding0.shape[2] * 2, encoding0.shape[2] * 2),
+                                mode='bilinear', align_corners=True)
+                encoding0 = _leaky_relu(self.shared_adapter[1](encoding0))
+                encoding0 = self.shared_adapter[2](encoding0)
+            else:
+                encoding0 = _leaky_relu(self.non_shared_adapter[i - self.config.specialized_levels][0](encoding0))
+                encoding0 = F.interpolate(encoding0, size=(encoding0.shape[2] * 2, encoding0.shape[2] * 2),
+                                mode='bilinear', align_corners=True)
+                encoding0 = _leaky_relu(self.non_shared_adapter[i - self.config.specialized_levels][1](encoding0))
+                encoding0 = self.non_shared_adapter[i - self.config.specialized_levels][2](encoding0)
             enc_pyr.append(encoding0)
 
+        enc_pyr = list(reversed(enc_pyr))
+        #enc_pyr2 = util.build_image_pyramid(_leaky_relu(self.adapterconv(encoding0)), self.config)
+
+
+        # Extract feature pyramids (Siamese)
         feat_pyr0 = self.feature_extractor(img_pyr0)
         feat_pyr1 = self.feature_extractor(img_pyr1)
 
+        ## OG enc_feat_pyr = self.feature_extractor(enc_pyr)
+
+
+        # Estimate residual flow pyramids (forward and backward)
+        #fwd_res_flow = self.predict_flow(feat_pyr0, feat_pyr1)
+        print("predict flow")
         bwd_res_flow = self.predict_flow(feat_pyr1, feat_pyr0)
 
         # Synthesize full flows and truncate to fusion levels
         #fwd_flow_pyr = util.flow_pyramid_synthesis(fwd_res_flow)
         bwd_flow_pyr = util.flow_pyramid_synthesis(bwd_res_flow)
         L = self.config.fusion_pyramid_levels
+        #fwd_flow_pyr = fwd_flow_pyr[:L]
         bwd_flow_pyr = bwd_flow_pyr[:L]
-        for i in range(L):
-            bwd_flow_pyr[i] = F.avg_pool2d(bwd_flow_pyr[i] / 16, kernel_size=16, stride=16, padding=0)
 
+        # Prepare pyramids to warp: stack image + features per level
         to_warp_0_a = enc_pyr[:L]
         # Warp using backward warping (reads from source via flow)
         bwd_warped = util.pyramid_warp(to_warp_0_a, bwd_flow_pyr)
@@ -97,6 +119,7 @@ class OFMNet(nn.Module):
         aligned = util.concatenate_pyramids(bwd_warped, bwd_flow_pyr)
         # Fuse to get final prediction
         pred = self.fusion(aligned)
+        pred = F.avg_pool2d(pred, kernel_size=16, stride=16)
         out = {'image': pred}  # assume final channels include RGB
 
         # Optionally add aux outputs for debugging/supervision
