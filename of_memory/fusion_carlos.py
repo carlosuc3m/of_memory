@@ -23,12 +23,13 @@ class Fusion(nn.Module):
         # Build per‑level conv modules (fine to coarse, index 0=finest)
         self.convs = nn.ModuleList()
         k = config.filters
+        k = 256
         m = config.specialized_levels
         
         for i in range(self.levels - 1):
             # Number of output channels at this level
-            #num_filters = (k << i) if i < m else (k << m)
-            num_filters = 256
+            num_filters = (k << i) if i < m else (k << m)
+            #num_filters = 256
             # We use LazyConv2d so in_channels are inferred at first forward pass,
             # and padding="same" to match TF's Conv2D(padding='same').
             level_convs = nn.ModuleList([
@@ -41,7 +42,7 @@ class Fusion(nn.Module):
         # Final 1×1 conv to produce RGB output
         # Input channels = config.filters (level 0 num_filters) once LazyConv2d has run
         #self.output_conv = nn.Conv2d(config.filters, _NUMBER_OF_COLOR_CHANNELS, kernel_size=1)
-        self.output_conv = nn.Conv2d(num_filters, _NUMBER_OF_COLOR_CHANNELS, kernel_size=1)
+        self.output_conv = nn.Conv2d(k, _NUMBER_OF_COLOR_CHANNELS, kernel_size=1)
     
     def forward(self, pyramid: List[torch.Tensor]) -> torch.Tensor:
         """
