@@ -40,7 +40,8 @@ class Fusion(nn.Module):
         
         # Final 1×1 conv to produce RGB output
         # Input channels = config.filters (level 0 num_filters) once LazyConv2d has run
-        self.output_conv = nn.Conv2d(config.filters, _NUMBER_OF_COLOR_CHANNELS, kernel_size=1)
+        #self.output_conv = nn.Conv2d(config.filters, _NUMBER_OF_COLOR_CHANNELS, kernel_size=1)
+        self.output_conv = nn.Conv2d(num_filters, _NUMBER_OF_COLOR_CHANNELS, kernel_size=1)
     
     def forward(self, pyramid: List[torch.Tensor]) -> torch.Tensor:
         """
