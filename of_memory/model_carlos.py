@@ -62,7 +62,7 @@ class OFMNet(nn.Module):
             levels_diff /= 2
 
         enc_pyr = [encoding0]
-        for i in range(levels):
+        for i in range(levels - 1):
             if i < levels - self.config.specialized_levels - 1:
                 encoding0 = _leaky_relu(self.shared_adapter[0](encoding0))
                 encoding0 = F.interpolate(encoding0, size=(encoding0.shape[2] * 2, encoding0.shape[2] * 2),
