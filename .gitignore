@@ -1,5 +1,6 @@
 /videos/
 /dataset/
+/checkpoints/
 /.vscode/
 
 # Byte‑compiled / optimized / DLL files

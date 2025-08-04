@@ -53,8 +53,8 @@ def main():
     specialized_levels = 3
     sub_levels = 4
     flow_convs = [3, 3, 3, 3]
-    flow_filters = [32, 64, 128, 256]
-    filters = 64
+    flow_filters = [32, 64, 128, 256] // 2
+    filters = 16
 
     ## OG learning_rate = 0.0001
     learning_rate = 0.0003
@@ -95,7 +95,7 @@ def main():
             optimizer,
             gamma=gamma
         )
-    h5_path = '/content/data_pairs_1_toy.h5'
+    h5_path = '/home/carlos/git_amazon/of_memory/datasets/data_pairs_1_toy.h5'
     transforms = OFMTransforms(1024, max_hole_area=0.0, max_sprinkle_area=0.0)
     dataset = EncodingDataset(h5_path)
     train_len = int(0.8 * len(dataset))
@@ -231,7 +231,7 @@ def train_model(
 
         # ——— Validation phase ———
         if val_loader is not None and epoch % 10 == 0:
-            save_checkpoint(model, optimizer, lr_scheduler, epoch, total_loss, path="/content/drive/MyDrive/ofm/checkpoint.pt")
+            save_checkpoint(model, optimizer, lr_scheduler, epoch, total_loss, path="/home/carlos/git_amazon/of_memory/checkpoints/checkpoint.pt")
             model.eval()
             val_running = 0.0
             numbers = 0
@@ -258,7 +258,7 @@ def train_model(
 
             # Checkpoint best model
             if epoch_val_loss < best_val_loss:
-              save_checkpoint(model, optimizer, lr_scheduler, epoch, total_loss, path="/content/drive/MyDrive/ofm/best_checkpoint.pt")
+              save_checkpoint(model, optimizer, lr_scheduler, epoch, total_loss, path="/home/carlos/git_amazon/of_memory/checkpoints/best_checkpoint.pt")
 
         # ——— Scheduler step ———
 
