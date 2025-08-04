@@ -53,7 +53,7 @@ def main():
     specialized_levels = 3
     sub_levels = 4
     flow_convs = [3, 3, 3, 3]
-    flow_filters = [32, 64, 128, 256] // 2
+    flow_filters = [32 // 2, 64 // 2, 128 // 2, 256 // 2]
     filters = 16
 
     ## OG learning_rate = 0.0001
@@ -95,7 +95,7 @@ def main():
             optimizer,
             gamma=gamma
         )
-    h5_path = '/home/carlos/git_amazon/of_memory/datasets/data_pairs_1_toy.h5'
+    h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_1_toy.h5'
     transforms = OFMTransforms(1024, max_hole_area=0.0, max_sprinkle_area=0.0)
     dataset = EncodingDataset(h5_path)
     train_len = int(0.8 * len(dataset))
@@ -154,7 +154,7 @@ def train_model(
     model.to(device)
     scaler = GradScaler("cuda")
     accum_steps = 32
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=(128 // B_SIZE) * 400)
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=int(len(train_loader) / B_SIZE) * num_epochs)
     # The LR schedule initialization resets the initial LR of the optimizer.
     warmup_scheduler = warmup.UntunedLinearWarmup(optimizer)
     beta_loss = 0
@@ -197,9 +197,10 @@ def train_model(
 
                 optimizer.zero_grad()
                 with autocast("cuda", dtype=torch.bfloat16):
-                    outputs = model(x0, x1, encoding0)
+                    #outputs = model(x0, x1, encoding0)
+                    pred = model(x1, encoding0)
                     # If model returns dict:
-                    pred = outputs.get('image', outputs)
+                    #pred = outputs.get('image', outputs)
                     total_loss = criterion(pred, target)
                     #l3, l4 = sam_loss(target, pred)
                 scaler.scale(total_loss).backward()
@@ -243,8 +244,9 @@ def train_model(
                     encoding0 = encoding0.to(device)
                     target = target.to(device)
 
-                    outputs = model(x0, x1, encoding0)
-                    pred = outputs.get('image', outputs)
+                    #outputs = model(x0, x1, encoding0)
+                    pred = model(x1, encoding0)
+                    #pred = outputs.get('image', outputs)
                     loss = criterion(pred, target)
                     #l3, l4 = sam_loss(target, pred)
 

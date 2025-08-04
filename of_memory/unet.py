@@ -9,27 +9,33 @@ class UNet(nn.Module):
         self.n_channels = n_channels
         self.n_classes = n_classes
         self.bilinear = bilinear
-        factor = 1
+        factor = 2
         self.inc = (DoubleConv(n_channels, int(64 // factor)))
         self.down1 = (Down(int(64 // factor), int(128 // factor)))
         self.down2 = (Down(int(128 // factor), int(256 // factor)))
         self.down3 = (Down(int(256 // factor), int(512 // factor)))
         # factor = 2 if bilinear else 1
         self.down4 = (Down(int(512 // factor), int(1024 // factor)))
-        self.down5 = (Down(int(1024 // factor), int(2048 // factor)))
-        self.down6 = (Down(int(2048 // factor), int(4096 // factor)))
-        self.up1 = (Up(int(4096 // factor), int(2048 // factor), bilinear))
-        self.up2 = (Up(int(2048 // factor), int(1024 // factor), bilinear))
-        self.outc = (OutConv(int(1024 // factor), n_classes))
+        conv_channels = int(1024 // factor) + 256
+        self.down5 = (Down(conv_channels, conv_channels * 2))
+        conv_channels *= 2
+        self.down6 = (Down(conv_channels, conv_channels * 2))
+        conv_channels *= 2
+        self.up1 = (Up(conv_channels, int(conv_channels // 2), bilinear))
+        conv_channels = int(conv_channels // 2)
+        self.up2 = (Up(conv_channels, int(conv_channels // 2), bilinear))
+        conv_channels = int(conv_channels // 2)
+        self.outc = (OutConv(conv_channels, n_classes))
 
-    def forward(self, x):
+    def forward(self, x, encodings):
         x1 = self.inc(x)
-        x2 = self.down1(x1)
-        x3 = self.down2(x2)
-        x4 = self.down3(x3)
-        x5 = self.down4(x4)
-        x6 = self.down5(x5)
-        x7 = self.down6(x6)
+        x2 = self.down1(x1) # 512
+        x3 = self.down2(x2) # 256
+        x4 = self.down3(x3) # 128
+        x5 = self.down4(x4) # 64
+        x5 = torch.cat([x5, encodings], dim=1)
+        x6 = self.down5(x5) # 32
+        x7 = self.down6(x6) # 16
         x = self.up1(x7, x6)
         x = self.up2(x, x5)
         logits = (self.outc(x))
