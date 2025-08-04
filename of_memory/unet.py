@@ -4,12 +4,11 @@ from .unet_parts import *
 
 
 class UNet(nn.Module):
-    def __init__(self, n_channels, n_classes, bilinear=False):
+    def __init__(self, n_channels, n_classes, factor=2, bilinear=False):
         super(UNet, self).__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes
         self.bilinear = bilinear
-        factor = 2
         self.inc = (DoubleConv(n_channels, int(64 // factor)))
         self.down1 = (Down(int(64 // factor), int(128 // factor)))
         self.down2 = (Down(int(128 // factor), int(256 // factor)))
