@@ -23,13 +23,12 @@ class Fusion(nn.Module):
         # Build per‑level conv modules (fine to coarse, index 0=finest)
         self.convs = nn.ModuleList()
         k = config.filters
-        k = 256
         m = config.specialized_levels
         
         for i in range(self.levels - 1):
             # Number of output channels at this level
             num_filters = (k << i) if i < m else (k << m)
-            #num_filters = 256
+            num_filters = 256
             # We use LazyConv2d so in_channels are inferred at first forward pass,
             # and padding="same" to match TF's Conv2D(padding='same').
             level_convs = nn.ModuleList([
