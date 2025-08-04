@@ -76,11 +76,11 @@ class OFMNet(nn.Module):
         bwd_flow_pyr = util.flow_pyramid_synthesis(bwd_res_flow)
         L = self.config.fusion_pyramid_levels
         bwd_flow_pyr = bwd_flow_pyr[:L]
-        feat_pyr1 = feat_pyr1[:L]
+        feat_pyr1 = feat_pyr1[-L:]
         for i in range(L):
             bwd_flow_pyr[i] = F.avg_pool2d(bwd_flow_pyr[i] / 16, kernel_size=16, stride=16, padding=0)
         for i in range(L):
-            feat_pyr1[i] = F.avg_pool2d(feat_pyr1[i] / 16, kernel_size=16, stride=16, padding=0)
+            feat_pyr1[i] = F.avg_pool2d(feat_pyr1[i] / (16 / ((self.config.pyramid_levels - self.config.fusion_pyramid_levels) * 2)), kernel_size=16, stride=16, padding=0)
 
         to_warp_0_a = enc_pyr[:L]
         # Warp using backward warping (reads from source via flow)
