@@ -15,7 +15,7 @@ import sys
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 
-MAX_SIZE = 5 * 1024 * 1024 * 1024
+MAX_SIZE = 300 * 1024 * 1024 * 1024
 
 # -----------------------------------------------------------------------------
 # 1) Replace this with however you load your encoder.
@@ -97,16 +97,27 @@ def main():
 
     # open HDF5 with resizable datasets
     unit_size = 3 * TARGET_SIZE[0] * TARGET_SIZE[1] * 2 * 4 + 256 * 64 * 64 * 2 * 4
-    max_images = MAX_SIZE // unit_size
+    max_images = MAX_SIZE // unit_size         # image height & width
+    chunks = (1, 3, TARGET_SIZE[0], TARGET_SIZE[1])
+    compression = "gzip"
+    compression_opts = 4
     with h5py.File(OUT_H5, 'w') as h5:
         img1_ds = h5.create_dataset('img1',
                                     shape=(0, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
                                     maxshape=(None, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
-                                    dtype='float32')
+                                    dtype='float32',
+                                    chunks=chunks,
+                                    compression=compression,
+                                    compression_opts=compression_opts,
+                                    shuffle=True)
         img2_ds = h5.create_dataset('img2',
                                     shape=(0, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
                                     maxshape=(None, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
-                                    dtype='float32')
+                                    dtype='float32',
+                                    chunks=chunks,
+                                    compression=compression,
+                                    compression_opts=compression_opts,
+                                    shuffle=True)
         enc1_ds = h5.create_dataset('enc1',
                                     shape=(0, 256, 64, 64),
                                     maxshape=(None, 256, 64, 64),
