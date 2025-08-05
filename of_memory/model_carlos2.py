@@ -115,8 +115,10 @@ class OFMNet(nn.Module):
         aligned = util.concatenate_pyramids(aligned, bwd_flow_pyr)
         aligned = util.concatenate_pyramids(aligned, fwd_flow_pyr)
         """
-        B, C, D, H, W = bwd_flow_pyr_tot.shape
-        aligned = util.concatenate_pyramids(bwd_warped, bwd_flow_pyr_tot.reshape(B, C * D, H, W))
+        for i in range(L):
+            B, C, D, H, W = bwd_flow_pyr_tot[i].shape
+            bwd_flow_pyr_tot[i] = bwd_flow_pyr_tot[i].reshape(B, C * D, H, W)
+        aligned = util.concatenate_pyramids(bwd_warped, bwd_flow_pyr_tot)
         aligned = util.concatenate_pyramids(aligned, feat_pyr1)
         # Fuse to get final prediction
         pred = self.fusion(aligned)
