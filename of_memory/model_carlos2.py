@@ -83,12 +83,12 @@ class OFMNet(nn.Module):
         feat_pyr1 = feat_pyr1[-L:]
         bwd_flow_pyr_tot = [0] * L
         for i in range(L):
-            aux_fl = self.down1(self.inc(bwd_flow_pyr[i][:, :1, :, :]))
+            aux_fl = self.down1(self.inc(bwd_flow_pyr[i][:, :1, :, :] / (2^levels)))
             aux_fl = self.down2(aux_fl)
             aux_fl = self.down3(aux_fl)
             aux_fl = self.down4(aux_fl)
             bwd_flow_pyr_1 = aux_fl
-            aux_fl = self.down1(self.inc(bwd_flow_pyr[i][:, 1:, :, :]))
+            aux_fl = self.down1(self.inc(bwd_flow_pyr[i][:, 1:, :, :] / (2^levels)))
             aux_fl = self.down2(aux_fl)
             aux_fl = self.down3(aux_fl)
             aux_fl = self.down4(aux_fl)
@@ -98,6 +98,7 @@ class OFMNet(nn.Module):
 
         k_size = int(2 ^ (levels - (self.config.pyramid_levels - L )))
         if k_size > 1:
+            print("enter")
             for i in range(L):
                 feat_pyr1[i] = F.avg_pool2d(feat_pyr1[i] / k_size, kernel_size=k_size, stride=k_size, padding=0)
 
