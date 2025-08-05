@@ -97,9 +97,6 @@ class OFMNet(nn.Module):
 
 
         k_size = int(2 ^ (levels - (self.config.pyramid_levels - L )))
-        print(levels)
-        print(self.config.pyramid_levels)
-        print(L)
         if k_size > 1 and False:
             for i in range(L):
                 feat_pyr1[i] = F.avg_pool2d(feat_pyr1[i] / k_size, kernel_size=k_size, stride=k_size, padding=0)
