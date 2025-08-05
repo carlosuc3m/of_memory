@@ -4,7 +4,7 @@ from config.config import Options
 
 from . import util
 from .feature_extractor import FeatureExtractor
-from .pyramid_flow_estimator import PyramidFlowEstimator
+from .pyramid_flow_estimator import PyramidFlowEstimator_carlos
 from .fusion_carlos import Fusion
 
 import torch.nn.functional as F
@@ -34,7 +34,7 @@ class OFMNet(nn.Module):
         # Siamese feature extractor
         self.feature_extractor = FeatureExtractor(config)
         # Shared flow predictor
-        self.predict_flow = PyramidFlowEstimator(config)
+        self.predict_flow = PyramidFlowEstimator_carlos(config)
         # Fusion (decoder) network
         self.fusion = Fusion(config)
 
@@ -94,8 +94,6 @@ class OFMNet(nn.Module):
         img_pyr0.append(x0)
         x0 = self.down8(x0)
         img_pyr0.append(x0)
-        for ll in img_pyr0:
-            print(ll.shape)
 
         img_pyr1 = []
         x1 = self.inc(x1)
@@ -116,8 +114,6 @@ class OFMNet(nn.Module):
         img_pyr1.append(x1)
         x1 = self.down8(x1)
         img_pyr1.append(x1)
-        for ll in img_pyr1:
-            print(ll.shape)
 
         levels_diff = x0.shape[2] / encoding0.shape[2]
         levels = 0
