@@ -60,7 +60,7 @@ class OFMNet(nn.Module):
         img_pyr1 = util.build_image_pyramid(x1, self.config)
 
         levels_diff = x0.shape[2] / encoding0.shape[2]
-        levels = 1
+        levels = 0
         while (levels_diff % 2 == 0):
             levels += 1
             levels_diff /= 2
