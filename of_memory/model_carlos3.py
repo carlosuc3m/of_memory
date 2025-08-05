@@ -94,6 +94,8 @@ class OFMNet(nn.Module):
         img_pyr0.append(x0)
         x0 = self.down8(x0)
         img_pyr0.append(x0)
+        for ll in img_pyr0:
+            print(ll.shape)
 
         img_pyr1 = []
         x1 = self.inc(x1)
@@ -114,6 +116,8 @@ class OFMNet(nn.Module):
         img_pyr1.append(x1)
         x1 = self.down8(x1)
         img_pyr1.append(x1)
+        for ll in img_pyr1:
+            print(ll.shape)
 
         levels_diff = x0.shape[2] / encoding0.shape[2]
         levels = 0
