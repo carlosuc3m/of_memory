@@ -4,7 +4,7 @@ from config.config import Options
 
 from . import util
 from .feature_extractor import FeatureExtractor
-from .pyramid_flow_estimator import PyramidFlowEstimator_carlos
+from .pyramid_flow_estimator_carlos import PyramidFlowEstimator
 from .fusion_carlos import Fusion
 
 import torch.nn.functional as F
@@ -34,7 +34,7 @@ class OFMNet(nn.Module):
         # Siamese feature extractor
         self.feature_extractor = FeatureExtractor(config)
         # Shared flow predictor
-        self.predict_flow = PyramidFlowEstimator_carlos(config)
+        self.predict_flow = PyramidFlowEstimator(config)
         # Fusion (decoder) network
         self.fusion = Fusion(config)
 
