@@ -81,6 +81,7 @@ class OFMNet(nn.Module):
         bwd_flow_pyr = util.flow_pyramid_synthesis(bwd_res_flow)
         bwd_flow_pyr = bwd_flow_pyr[:L]
         feat_pyr1 = feat_pyr1[-L:]
+        """
         bwd_flow_pyr_tot = [0] * L
         for i in range(L):
             aux_fl = self.down1(self.inc(bwd_flow_pyr[i][:, :1, :, :] / (2**levels)))
@@ -94,7 +95,7 @@ class OFMNet(nn.Module):
             aux_fl = self.down4(aux_fl)
             bwd_flow_pyr_2 = aux_fl
             bwd_flow_pyr_tot[i] = torch.cat((bwd_flow_pyr_1.unsqueeze(2), bwd_flow_pyr_2.unsqueeze(2)), axis=2)
-
+        """
 
         k_size = int(2 ^ (levels - (self.config.pyramid_levels - L )))
         if k_size > 1 and False:
@@ -103,22 +104,14 @@ class OFMNet(nn.Module):
 
         to_warp_0_a = enc_pyr[:L]
         # Warp using backward warping (reads from source via flow)
-        bwd_warped = util.pyramid_channel_warp(to_warp_0_a, bwd_flow_pyr_tot)
-        """
-        fwd_flow_on_t1 = util.pyramid_warp(fwd_flow_pyr, bwd_flow_pyr)
-        # (b) Invert it (negate) so it tells us where in encoding0 to sample:
-        inv_fwd_flow = [ -flow for flow in fwd_flow_on_t1 ]
-        # (c) Warp encoding0 by that inverted‐forward field:
-        fwd_warped = util.pyramid_warp(to_warp_0_a, inv_fwd_flow)
-        # Build the aligned pyramid: [warp0, warp1, bwd_flow, fwd_flow]
-        aligned = util.concatenate_pyramids(fwd_warped, bwd_warped)
-        aligned = util.concatenate_pyramids(aligned, bwd_flow_pyr)
-        aligned = util.concatenate_pyramids(aligned, fwd_flow_pyr)
+        bwd_warped = util.pyramid_warp(to_warp_0_a, bwd_flow_pyr)
         """
         for i in range(L):
             B, C, D, H, W = bwd_flow_pyr_tot[i].shape
             bwd_flow_pyr_tot[i] = bwd_flow_pyr_tot[i].reshape(B, C * D, H, W)
         aligned = util.concatenate_pyramids(bwd_warped, bwd_flow_pyr_tot)
+        """
+        aligned = util.concatenate_pyramids(bwd_warped, bwd_flow_pyr)
         aligned = util.concatenate_pyramids(aligned, feat_pyr1)
         # Fuse to get final prediction
         pred = self.fusion(aligned)
