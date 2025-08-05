@@ -61,8 +61,6 @@ class PyramidFlowEstimator(nn.Module):
     """
     def __init__(self, config: Options):
         super().__init__()
-        self.levels = config.pyramid_levels
-        self.specialized = config.specialized_levels
 
         # Build one predictor per level up to specialized_levels
         self.predictors = nn.ModuleList()
@@ -70,7 +68,7 @@ class PyramidFlowEstimator(nn.Module):
         factor = 2
         for i in range(config.pyramid_levels):
             self.predictors.append(
-                FlowEstimator(config.flow_convs[i], start_chan)
+                FlowEstimator(3, start_chan)
             )
             start_chan *= factor
 
