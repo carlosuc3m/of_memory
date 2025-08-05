@@ -103,14 +103,14 @@ class OFMNet(nn.Module):
 
         to_warp_0_a = enc_pyr[:L]
         # Warp using backward warping (reads from source via flow)
-        bwd_warped = util.pyramid_warp(to_warp_0_a, bwd_flow_pyr)
+        bwd_warped = util.pyramid_warp(to_warp_0_a, bwd_flow_pyr_tot)
         """
         for i in range(L):
             B, C, D, H, W = bwd_flow_pyr_tot[i].shape
             bwd_flow_pyr_tot[i] = bwd_flow_pyr_tot[i].reshape(B, C * D, H, W)
         aligned = util.concatenate_pyramids(bwd_warped, bwd_flow_pyr_tot)
         """
-        aligned = util.concatenate_pyramids(bwd_warped, bwd_flow_pyr)
+        aligned = util.concatenate_pyramids(bwd_warped, bwd_flow_pyr_tot)
         aligned = util.concatenate_pyramids(aligned, feat_pyr1)
         # Fuse to get final prediction
         pred = self.fusion(aligned)
