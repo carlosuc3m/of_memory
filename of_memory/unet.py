@@ -15,7 +15,7 @@ class UNet(nn.Module):
         self.down3 = (Down(int(256 // factor), int(512 // factor)))
         # factor = 2 if bilinear else 1
         self.down4 = (Down(int(512 // factor), int(1024 // factor)))
-        conv_channels = int(1024 // factor) #+ 256
+        conv_channels = int(1024 // factor) + 256
         self.down5 = (Down(conv_channels, conv_channels * 2))
         conv_channels *= 2
         self.down6 = (Down(conv_channels, conv_channels * 2))
@@ -32,7 +32,7 @@ class UNet(nn.Module):
         x3 = self.down2(x2) # 256
         x4 = self.down3(x3) # 128
         x5 = self.down4(x4) # 64
-        #x5 = torch.cat([x5, encodings], dim=1)
+        x5 = torch.cat([x5, encodings], dim=1)
         x6 = self.down5(x5) # 32
         x7 = self.down6(x6) # 16
         x = self.up1(x7, x6)
