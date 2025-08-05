@@ -58,6 +58,8 @@ class OFMNet(nn.Module):
         # Build image pyramids: list of tensors from full res downwards
         img_pyr0 = util.build_image_pyramid(x0, self.config)
         img_pyr1 = util.build_image_pyramid(x1, self.config)
+        for l2 in img_pyr1:
+            print(l2.shape)
 
         levels_diff = x0.shape[2] / encoding0.shape[2]
         levels = 1
@@ -73,6 +75,8 @@ class OFMNet(nn.Module):
 
         feat_pyr0 = self.feature_extractor(img_pyr0)
         feat_pyr1 = self.feature_extractor(img_pyr1)
+        for l2 in feat_pyr1:
+            print(l2.shape)
 
         bwd_res_flow = self.predict_flow(feat_pyr1, feat_pyr0)
 
@@ -98,7 +102,6 @@ class OFMNet(nn.Module):
 
         k_size = int(2 ^ (levels - (self.config.pyramid_levels - L )))
         if k_size > 1:
-            print("enter")
             for i in range(L):
                 feat_pyr1[i] = F.avg_pool2d(feat_pyr1[i] / k_size, kernel_size=k_size, stride=k_size, padding=0)
 
