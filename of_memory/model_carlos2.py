@@ -38,17 +38,17 @@ class OFMNet(nn.Module):
         # Fusion (decoder) network
         self.fusion = Fusion(config)
 
-        n_chans = 16
+        n_chans = 1
+        factor = 1
         self.inc = DoubleConv(1, n_chans)
-        self.down1 = Down(n_chans, n_chans * 2)
-        n_chans *= 2
-        self.down2 = Down(n_chans, n_chans * 2)
-        n_chans *= 2
-        self.down3 = Down(n_chans, n_chans * 2)
-        n_chans *= 2
-        # factor = 2 if bilinear else 1
-        self.down4 = Down(n_chans, n_chans * 2)
-        n_chans *= 2
+        self.down1 = Down(n_chans, n_chans * factor)
+        n_chans *= factor
+        self.down2 = Down(n_chans, n_chans * factor)
+        n_chans *= factor
+        self.down3 = Down(n_chans, n_chans * factor)
+        n_chans *= factor
+        self.down4 = Down(n_chans, n_chans * factor)
+        n_chans *= factor
 
     def forward(self, x0: torch.Tensor, x1: torch.Tensor, encoding0: torch.Tensor):
         """
@@ -81,7 +81,6 @@ class OFMNet(nn.Module):
         bwd_flow_pyr = util.flow_pyramid_synthesis(bwd_res_flow)
         bwd_flow_pyr = bwd_flow_pyr[:L]
         feat_pyr1 = feat_pyr1[-L:]
-        """
         bwd_flow_pyr_tot = [0] * L
         for i in range(L):
             aux_fl = self.down1(self.inc(bwd_flow_pyr[i][:, :1, :, :] / (2**levels)))
@@ -94,8 +93,8 @@ class OFMNet(nn.Module):
             aux_fl = self.down3(aux_fl)
             aux_fl = self.down4(aux_fl)
             bwd_flow_pyr_2 = aux_fl
-            bwd_flow_pyr_tot[i] = torch.cat((bwd_flow_pyr_1.unsqueeze(2), bwd_flow_pyr_2.unsqueeze(2)), axis=2)
-        """
+            #bwd_flow_pyr_tot[i] = torch.cat((bwd_flow_pyr_1.unsqueeze(2), bwd_flow_pyr_2.unsqueeze(2)), axis=2)
+            bwd_flow_pyr_tot[i] = torch.cat((bwd_flow_pyr_1, bwd_flow_pyr_2), axis=1)
 
         k_size = int(2 ^ (levels - (self.config.pyramid_levels - L )))
         if k_size > 1 and False:
