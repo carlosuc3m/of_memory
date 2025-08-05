@@ -58,9 +58,9 @@ class OFMNet(nn.Module):
         self.down8 = Down(n_chans, n_chans * factor)
         n_chans *= factor
 
-        n_chans = 1
+        n_chans = 2
         factor = 1
-        self.inc_ = DoubleConv(3, n_chans)
+        self.inc_ = DoubleConv(2, n_chans)
         self.down1_ = Down(n_chans, n_chans * factor)
         n_chans *= factor
         self.down2_ = Down(n_chans, n_chans * factor)
@@ -137,18 +137,12 @@ class OFMNet(nn.Module):
         img_pyr1 = img_pyr1[-L:]
         bwd_flow_pyr_tot = [0] * L
         for i in range(L):
-            aux_fl = self.down1_(self.inc_(bwd_flow_pyr[i][:, :1, :, :] / (2**levels)))
+            aux_fl = self.down1_(self.inc_(bwd_flow_pyr[i]/ (2**levels)))
             aux_fl = self.down2_(aux_fl)
             aux_fl = self.down3_(aux_fl)
             aux_fl = self.down4_(aux_fl)
-            bwd_flow_pyr_1 = aux_fl
-            aux_fl = self.down1_(self.inc(bwd_flow_pyr[i][:, 1:, :, :] / (2**levels)))
-            aux_fl = self.down2_(aux_fl)
-            aux_fl = self.down3_(aux_fl)
-            aux_fl = self.down4_(aux_fl)
-            bwd_flow_pyr_2 = aux_fl
             #bwd_flow_pyr_tot[i] = torch.cat((bwd_flow_pyr_1.unsqueeze(2), bwd_flow_pyr_2.unsqueeze(2)), axis=2)
-            bwd_flow_pyr_tot[i] = torch.cat((bwd_flow_pyr_1, bwd_flow_pyr_2), axis=1)
+            bwd_flow_pyr_tot[i] = aux_fl
 
 
         to_warp_0_a = enc_pyr[:L]
