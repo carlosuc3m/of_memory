@@ -134,7 +134,7 @@ class OFMNet(nn.Module):
         #fwd_flow_pyr = util.flow_pyramid_synthesis(fwd_res_flow)
         bwd_flow_pyr = util.flow_pyramid_synthesis(bwd_res_flow)
         bwd_flow_pyr = bwd_flow_pyr[:L]
-        feat_pyr1 = feat_pyr1[-L:]
+        img_pyr1 = img_pyr1[-L:]
         bwd_flow_pyr_tot = [0] * L
         for i in range(L):
             aux_fl = self.down1_(self.inc_(bwd_flow_pyr[i][:, :1, :, :] / (2**levels)))
@@ -161,7 +161,7 @@ class OFMNet(nn.Module):
         aligned = util.concatenate_pyramids(bwd_warped, bwd_flow_pyr_tot)
         """
         aligned = util.concatenate_pyramids(bwd_warped, bwd_flow_pyr_tot)
-        aligned = util.concatenate_pyramids(aligned, feat_pyr1)
+        aligned = util.concatenate_pyramids(aligned, img_pyr1)
         # Fuse to get final prediction
         pred = self.fusion(aligned)
         out = {'image': pred}  # assume final channels include RGB
