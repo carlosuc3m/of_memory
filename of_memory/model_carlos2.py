@@ -73,22 +73,14 @@ class OFMNet(nn.Module):
 
         feat_pyr0 = self.feature_extractor(img_pyr0)
         feat_pyr1 = self.feature_extractor(img_pyr1)
-        for l2 in feat_pyr1:
-            print(l2.shape)
 
         bwd_res_flow = self.predict_flow(feat_pyr1, feat_pyr0)
-        print("after flow")
-        for l2 in feat_pyr1:
-            print(l2.shape)
 
         # Synthesize full flows and truncate to fusion levels
         #fwd_flow_pyr = util.flow_pyramid_synthesis(fwd_res_flow)
         bwd_flow_pyr = util.flow_pyramid_synthesis(bwd_res_flow)
         bwd_flow_pyr = bwd_flow_pyr[:L]
         feat_pyr1 = feat_pyr1[-L:]
-        print("after seg")
-        for l2 in feat_pyr1:
-            print(l2.shape)
         bwd_flow_pyr_tot = [0] * L
         for i in range(L):
             aux_fl = self.down1(self.inc(bwd_flow_pyr[i][:, :1, :, :] / (2^levels)))
@@ -105,12 +97,10 @@ class OFMNet(nn.Module):
 
 
         k_size = int(2 ^ (levels - (self.config.pyramid_levels - L )))
-        if k_size > 1:
+        print(k_size)
+        if k_size > 1 and False:
             for i in range(L):
                 feat_pyr1[i] = F.avg_pool2d(feat_pyr1[i] / k_size, kernel_size=k_size, stride=k_size, padding=0)
-        print("after if")
-        for l2 in feat_pyr1:
-            print(l2.shape)
 
         to_warp_0_a = enc_pyr[:L]
         # Warp using backward warping (reads from source via flow)
