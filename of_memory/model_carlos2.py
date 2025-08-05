@@ -84,22 +84,14 @@ class OFMNet(nn.Module):
         bwd_flow_pyr_tot = [0] * L
         for i in range(L):
             aux_fl = self.down1(self.inc(bwd_flow_pyr[i][:, :1, :, :]))
-            aux_fl = F.avg_pool2d(aux_fl, kernel_size=2, stride=2, padding=0)
             aux_fl = self.down2(aux_fl)
-            aux_fl = F.avg_pool2d(aux_fl, kernel_size=2, stride=2, padding=0)
             aux_fl = self.down3(aux_fl)
-            aux_fl = F.avg_pool2d(aux_fl, kernel_size=2, stride=2, padding=0)
             aux_fl = self.down4(aux_fl)
-            aux_fl = F.avg_pool2d(aux_fl, kernel_size=2, stride=2, padding=0)
             bwd_flow_pyr_1 = aux_fl
             aux_fl = self.down1(self.inc(bwd_flow_pyr[i][:, 1:, :, :]))
-            aux_fl = F.avg_pool2d(aux_fl, kernel_size=2, stride=2, padding=0)
             aux_fl = self.down2(aux_fl)
-            aux_fl = F.avg_pool2d(aux_fl, kernel_size=2, stride=2, padding=0)
             aux_fl = self.down3(aux_fl)
-            aux_fl = F.avg_pool2d(aux_fl, kernel_size=2, stride=2, padding=0)
             aux_fl = self.down4(aux_fl)
-            aux_fl = F.avg_pool2d(aux_fl, kernel_size=2, stride=2, padding=0)
             bwd_flow_pyr_2 = aux_fl
             bwd_flow_pyr_tot[i] = torch.cat((bwd_flow_pyr_1.unsqueeze(2), bwd_flow_pyr_2.unsqueeze(2)), axis=2)
 
