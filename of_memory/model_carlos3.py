@@ -55,8 +55,6 @@ class OFMNet(nn.Module):
         n_chans *= factor
         self.down7 = Down(n_chans, n_chans * factor)
         n_chans *= factor
-        self.down8 = Down(n_chans, n_chans * factor)
-        n_chans *= factor
 
         n_chans = 2
         factor = 1
@@ -92,8 +90,6 @@ class OFMNet(nn.Module):
         img_pyr0.append(x0)
         x0 = self.down7(x0)
         img_pyr0.append(x0)
-        x0 = self.down8(x0)
-        img_pyr0.append(x0)
 
         img_pyr1 = []
         x1 = self.inc(x1)
@@ -112,8 +108,6 @@ class OFMNet(nn.Module):
         img_pyr1.append(x1)
         x1 = self.down7(x1)
         img_pyr1.append(x1)
-        x1 = self.down8(x1)
-        img_pyr1.append(x1)
 
         levels_diff = x0.shape[2] / encoding0.shape[2]
         levels = 0
@@ -122,6 +116,7 @@ class OFMNet(nn.Module):
             levels_diff /= 2
 
         L = self.config.fusion_pyramid_levels
+        L = 4
         enc_pyr = [encoding0]
         for i in range(L - 1):
             encoding0 = F.avg_pool2d(encoding0, kernel_size=2, stride=2, padding=0)

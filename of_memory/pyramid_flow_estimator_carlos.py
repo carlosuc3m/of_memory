@@ -68,7 +68,7 @@ class PyramidFlowEstimator(nn.Module):
         factor = 2
         for i in range(config.pyramid_levels):
             self.predictors.append(
-                FlowEstimator(2, start_chan)
+                FlowEstimator(3, start_chan)
             )
             start_chan *= factor
 
