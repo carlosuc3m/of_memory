@@ -191,6 +191,8 @@ def concatenate_pyramids(pyramid1: List[torch.Tensor],
     Returns:
         List of [B, C1_i + C2_i, H_i, W_i] tensors.
     """
+    for l2 in pyramid2:
+        print(l2.shape)
     return [
         torch.cat([l1, l2], dim=1)
         for l1, l2 in zip(pyramid1, pyramid2)
