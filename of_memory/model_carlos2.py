@@ -58,8 +58,6 @@ class OFMNet(nn.Module):
         # Build image pyramids: list of tensors from full res downwards
         img_pyr0 = util.build_image_pyramid(x0, self.config)
         img_pyr1 = util.build_image_pyramid(x1, self.config)
-        for l2 in img_pyr1:
-            print(l2.shape)
 
         levels_diff = x0.shape[2] / encoding0.shape[2]
         levels = 1
@@ -79,12 +77,18 @@ class OFMNet(nn.Module):
             print(l2.shape)
 
         bwd_res_flow = self.predict_flow(feat_pyr1, feat_pyr0)
+        print("after flow")
+        for l2 in feat_pyr1:
+            print(l2.shape)
 
         # Synthesize full flows and truncate to fusion levels
         #fwd_flow_pyr = util.flow_pyramid_synthesis(fwd_res_flow)
         bwd_flow_pyr = util.flow_pyramid_synthesis(bwd_res_flow)
         bwd_flow_pyr = bwd_flow_pyr[:L]
         feat_pyr1 = feat_pyr1[-L:]
+        print("after seg")
+        for l2 in feat_pyr1:
+            print(l2.shape)
         bwd_flow_pyr_tot = [0] * L
         for i in range(L):
             aux_fl = self.down1(self.inc(bwd_flow_pyr[i][:, :1, :, :] / (2^levels)))
@@ -104,6 +108,9 @@ class OFMNet(nn.Module):
         if k_size > 1:
             for i in range(L):
                 feat_pyr1[i] = F.avg_pool2d(feat_pyr1[i] / k_size, kernel_size=k_size, stride=k_size, padding=0)
+        print("after if")
+        for l2 in feat_pyr1:
+            print(l2.shape)
 
         to_warp_0_a = enc_pyr[:L]
         # Warp using backward warping (reads from source via flow)
