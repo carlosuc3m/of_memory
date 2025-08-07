@@ -33,7 +33,7 @@ class Fusion(nn.Module):
             # and padding="same" to match TF's Conv2D(padding='same').
             level_convs = nn.ModuleList([
                 nn.LazyConv2d(num_filters, kernel_size=2, padding='same'),
-                nn.LazyConv2d(num_filters, kernel_size=3, padding='same'),
+                #nn.LazyConv2d(num_filters, kernel_size=3, padding='same'),
                 nn.LazyConv2d(num_filters, kernel_size=3, padding='same'),
             ])
             self.convs.append(level_convs)
@@ -71,7 +71,7 @@ class Fusion(nn.Module):
             
             # Two 3×3 convs with leaky ReLU
             net = F.leaky_relu(self.convs[i][1](net), negative_slope=0.2)
-            net = F.leaky_relu(self.convs[i][2](net), negative_slope=0.2)
+            #net = F.leaky_relu(self.convs[i][2](net), negative_slope=0.2)
         
         # Final 1×1 → RGB
         out = self.output_conv(net)

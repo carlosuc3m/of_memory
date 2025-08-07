@@ -90,9 +90,9 @@ def main():
         model.parameters(),
         lr=0.00003,
     )
-    _, best_val_loss = load_checkpoint("/home/carlos/git_amazon/of_memory/checkpoints/best_checkpoint.pt", model, optimizer)
-    optimizer.param_groups[0]['lr'] = 0.00003
-    h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_1_toy.h5'
+    _, best_val_loss = load_checkpoint("/home/carlos/git_amazon/of_memory/checkpoints/checkpoint.pt", model, optimizer)
+    optimizer.param_groups[0]['lr'] = 0.00001
+    h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_0_toy.h5'
     dataset = EncodingDataset(h5_path)
     train_len = int(0.8 * len(dataset))
     val_len   = len(dataset) - train_len

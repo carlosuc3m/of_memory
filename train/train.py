@@ -13,7 +13,7 @@ from torch import nn, optim
 from torch.utils.data import random_split, DataLoader
 from tqdm import tqdm
 
-from of_memory.model_carlos import OFMNet
+from of_memory.model_unet import OFMNet
 from of_memory.unet import UNet
 from of_memory.ofm_transforms import OFMTransforms
 from of_memory.encoding_dataset import EncodingDataset
@@ -48,8 +48,8 @@ def main():
     filters = 64
 
     ## LIGHT PARAMS
-    pyramid_levels = 8
-    fusion_pyramid_levels = 5
+    pyramid_levels = 7
+    fusion_pyramid_levels = 3
     specialized_levels = 3
     sub_levels = 4
     flow_convs = [3, 3, 3, 3]
@@ -57,7 +57,7 @@ def main():
     filters = 16
 
     ## OG learning_rate = 0.0001
-    learning_rate = 0.0003
+    learning_rate = 0.003
     learning_rate_decay_steps = 750000
     learning_rate_decay_rate = 0.464158
     learning_rate_staircase = True
@@ -72,30 +72,14 @@ def main():
                             use_aux_outputs=True)
 
     model = OFMNet(config)
-    model = UNet(3,256)
+    #model = UNet(3,256, factor=16)
     #model = ResNet(256)
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=learning_rate,
     )
-
-    if learning_rate_staircase:
-        # “Staircase” decay: multiply by decay_rate every decay_steps steps
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer,
-            step_size=learning_rate_decay_steps,
-            gamma=learning_rate_decay_rate
-        )
-    else:
-        # Smooth exponential decay: continuous, exactly
-        # lr = lr0 * decay_rate ** (step / decay_steps)
-        gamma = learning_rate_decay_rate ** (1.0 / learning_rate_decay_steps)
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            optimizer,
-            gamma=gamma
-        )
-    h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_1_toy.h5'
+    h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_0_toy.h5'
     transforms = OFMTransforms(1024, max_hole_area=0.0, max_sprinkle_area=0.0)
     dataset = EncodingDataset(h5_path)
     train_len = int(0.8 * len(dataset))
@@ -109,7 +93,7 @@ def main():
     val_loader   = DataLoader(val_ds,   batch_size=8, shuffle=False, num_workers=2)
 
     train_model(model=model, transforms=transforms, train_loader=train_loader, val_loader=val_loader, optimizer=optimizer,
-                criterion=nn.MSELoss(), device=torch.device("cuda"), num_epochs=400, scheduler=scheduler)
+                criterion=nn.MSELoss(), device=torch.device("cuda"), num_epochs=400, scheduler=None)
 
 
 
@@ -153,10 +137,8 @@ def train_model(
 
     model.to(device)
     scaler = GradScaler("cuda")
-    accum_steps = 32
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=int(len(train_loader) / B_SIZE) * num_epochs)
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=len(train_loader) * 5, T_mult=2, eta_min=3e-7)
     # The LR schedule initialization resets the initial LR of the optimizer.
-    warmup_scheduler = warmup.UntunedLinearWarmup(optimizer)
     beta_loss = 0
     counter_iter = -1
     """
@@ -164,6 +146,7 @@ def train_model(
       if isinstance(layer, (torch.nn.Conv2d, torch.nn.Linear)):
           nn.utils.spectral_norm(layer)
     """
+    prev_loss = float('inf')
     for epoch in range(1, num_epochs + 1):
         # ——— Training phase ———
         model.train()
@@ -197,10 +180,10 @@ def train_model(
 
                 optimizer.zero_grad()
                 with autocast("cuda", dtype=torch.bfloat16):
-                    #outputs = model(x0, x1, encoding0)
-                    pred = model(x1, encoding0)
+                    outputs = model(x0, x1, encoding0)
+                    #pred = model(x1, encoding0)
                     # If model returns dict:
-                    #pred = outputs.get('image', outputs)
+                    pred = outputs.get('image', outputs)
                     total_loss = criterion(pred, target)
                     #l3, l4 = sam_loss(target, pred)
                 scaler.scale(total_loss).backward()
@@ -210,8 +193,7 @@ def train_model(
 
                 scaler.step(optimizer)
                 scaler.update()
-                with warmup_scheduler.dampening():
-                  lr_scheduler.step()
+                #lr_scheduler.step()
                 if counter_iter % 20 == 0 and False:
                   print(total_loss.item())
                   print(beta_loss / 20)
@@ -229,7 +211,9 @@ def train_model(
 
         history['train_loss'].append(epoch_train_loss)
         #history['train_seg_loss'].append(epoch_train_seg_loss)
-
+        if prev_loss < epoch_train_loss:
+            optimizer.param_groups[0]['lr'] /= 2
+        prev_loss = epoch_train_loss
         # ——— Validation phase ———
         if val_loader is not None and epoch % 10 == 0:
             save_checkpoint(model, optimizer, lr_scheduler, epoch, total_loss, path="/home/carlos/git_amazon/of_memory/checkpoints/checkpoint.pt")
@@ -244,9 +228,9 @@ def train_model(
                     encoding0 = encoding0.to(device)
                     target = target.to(device)
 
-                    #outputs = model(x0, x1, encoding0)
-                    pred = model(x1, encoding0)
-                    #pred = outputs.get('image', outputs)
+                    outputs = model(x0, x1, encoding0)
+                    #pred = model(x1, encoding0)
+                    pred = outputs.get('image', outputs)
                     loss = criterion(pred, target)
                     #l3, l4 = sam_loss(target, pred)
 
