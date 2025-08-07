@@ -42,6 +42,18 @@ def save_checkpoint(model, optimizer, scheduler, epoch, loss, path="checkpoint.p
 
 def main():
 
+    h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_0_toy.h5'
+    dataset = EncodingDataset(h5_path)
+    train_len = int(0.8 * len(dataset))
+    val_len   = len(dataset) - train_len
+
+    # reproducible split
+    torch.manual_seed(42)
+    train_ds, val_ds = random_split(dataset, [train_len, val_len])
+
+    train_loader = DataLoader(train_ds, batch_size=B_SIZE, shuffle=True, num_workers=4)
+    val_loader   = DataLoader(val_ds,   batch_size=8, shuffle=False, num_workers=2)
+
     learning_rate = 0.003
     hiera = Hiera(embed_dim=24, num_heads=1, stages=[1, 2, 7, 2], global_att_blocks=[5, 7, 9], window_pos_embed_bkg_spatial_size=[7, 7]).cpu()
     pos_encoding = PositionEmbeddingSine(num_pos_feats=256, normalize=True, scale=None, temperature=1000)
@@ -103,18 +115,6 @@ def main():
 
 
 
-
-    h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_0_toy.h5'
-    dataset = EncodingDataset(h5_path)
-    train_len = int(0.8 * len(dataset))
-    val_len   = len(dataset) - train_len
-
-    # reproducible split
-    torch.manual_seed(42)
-    train_ds, val_ds = random_split(dataset, [train_len, val_len])
-
-    train_loader = DataLoader(train_ds, batch_size=B_SIZE, shuffle=True, num_workers=4)
-    val_loader   = DataLoader(val_ds,   batch_size=8, shuffle=False, num_workers=2)
 
     train_model(model=model, train_loader=train_loader, val_loader=val_loader, optimizer=optimizer,
                 criterion=nn.MSELoss(), device=torch.device("cuda"), num_epochs=40, scheduler=scheduler)
