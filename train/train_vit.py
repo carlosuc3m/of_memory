@@ -156,8 +156,11 @@ def train_model(
 
     model.to(device)
     scaler = GradScaler("cuda")
-
-
+    
+    log_file = "/home/carlos/git_amazon/log.txt"
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    if not os.path.exists(log_file):
+        f = open(log_file, "w")
 
     # The LR schedule initialization resets the initial LR of the optimizer.
     beta_loss = 0
@@ -212,6 +215,7 @@ def train_model(
         if prev_loss < epoch_train_loss:
             optimizer.param_groups[0]['lr'] /= 2
         prev_loss = epoch_train_loss
+        print(f"epoch {epoch} -- train_loss {(running_loss / (total_samples)):.6f}", file=f)
         # ——— Validation phase ———
         if val_loader is not None and epoch % 10 == 0:
             save_checkpoint(model, optimizer, scheduler, epoch, total_loss, path="/home/carlos/git_amazon/of_memory/checkpoints/checkpoint.pt")
@@ -243,6 +247,7 @@ def train_model(
             if epoch_val_loss < best_val_loss:
               save_checkpoint(model, optimizer, scheduler, epoch, total_loss, path="/home/carlos/git_amazon/of_memory/checkpoints/best_checkpoint.pt")
 
+            print(f"epoch {epoch} -- val_loss {(val_running / len(val_loader.dataset)):.6f}", file=f)
         # ——— Scheduler step ———
 
     print(f"Best val loss: {best_val_loss:.4f} (epoch {best_val_loss})")
