@@ -28,7 +28,7 @@ class ViTModel(nn.Module):
 
     def forward(self, sample: torch.Tensor, enc0: torch.Tensor):
         # Forward through backbone
-        features, pos = self.neck(self.trunk(sample), enc0)
+        features, pos = self.neck(self.trunk(sample, enc0))
         if self.scalp > 0:
             # Discard the lowest resolution features
             features, pos = features[: -self.scalp], pos[: -self.scalp]

@@ -17,11 +17,11 @@ from torch import nn, optim
 from torch.utils.data import random_split, DataLoader
 from tqdm import tqdm
 
-from sam2.modeling.backbones.hieradet import Hiera
+from of_memory_vit.hieradet import Hiera
 from sam2.modeling.position_encoding import PositionEmbeddingSine
 
 from of_memory_vit.vit_model import ViTModel
-from of_memory_vit.neck import FpnNeck
+from sam2.modeling.backbones.image_encoder import FpnNeck
 from of_memory.encoding_dataset import EncodingDataset
 
 from sam2_loss import SAM2Loss
@@ -61,8 +61,8 @@ def main():
         fpn_top_down_levels=[2, 3], fpn_interp_model="nearest")
     model = ViTModel(hiera, neck)
 
-    base_lr    = 5e-6       # scratch.base_lr
-    vision_lr  = 3e-6       # scratch.vision_lr
+    base_lr    = 5e-4       # scratch.base_lr
+    vision_lr  = 3e-4       # scratch.vision_lr
     wd         = 0.1        # default weight decay
     wd_exceptions = ("bias", "LayerNorm.weight")
     num_epochs = 40
@@ -103,10 +103,10 @@ def main():
 
     # note: order of lambdas must match param_groups
     lambdas = [
-        make_cosine_lambda(vision_lr, vision_lr/10),
-        make_cosine_lambda(vision_lr, vision_lr/10),
-        make_cosine_lambda(base_lr,   base_lr/10),
-        make_cosine_lambda(base_lr,   base_lr/10),
+        make_cosine_lambda(vision_lr, vision_lr/100),
+        make_cosine_lambda(vision_lr, vision_lr/100),
+        make_cosine_lambda(base_lr,   base_lr/100),
+        make_cosine_lambda(base_lr,   base_lr/100),
     ]
     scheduler = LambdaLR(optimizer, lr_lambda=lambdas)
 
@@ -159,8 +159,7 @@ def train_model(
     
     log_file = "/home/carlos/git_amazon/log.txt"
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
-    if not os.path.exists(log_file):
-        f = open(log_file, "w")
+    f = open(log_file, "w")
 
     # The LR schedule initialization resets the initial LR of the optimizer.
     beta_loss = 0
@@ -212,9 +211,9 @@ def train_model(
             #epoch_train_seg_loss = running_seg_loss / len(train_loader.dataset)
             tepoch.set_postfix(train_loss=epoch_train_loss)
 
-        if prev_loss < epoch_train_loss:
-            optimizer.param_groups[0]['lr'] /= 2
-        prev_loss = epoch_train_loss
+        #if prev_loss < epoch_train_loss:
+            #optimizer.param_groups[0]['lr'] /= 2
+        #prev_loss = epoch_train_loss
         print(f"epoch {epoch} -- train_loss {(running_loss / (total_samples)):.6f}", file=f)
         # ——— Validation phase ———
         if val_loader is not None and epoch % 10 == 0:
