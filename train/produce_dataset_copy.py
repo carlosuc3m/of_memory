@@ -129,7 +129,7 @@ def main():
 
         idx = 0
         iter_per = 200
-        for vid_path in video_paths[len(video_paths) // 2 :]:
+        for vid_path in video_paths[:]:
             print(vid_path)
             cap = cv2.VideoCapture(vid_path)
             frames = []
@@ -187,3 +187,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+    log_file = "/home/carlos/git_amazon/finished.txt"
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    with open(log_file, "w") as f:
+        print("done", file=f, flush=True)
