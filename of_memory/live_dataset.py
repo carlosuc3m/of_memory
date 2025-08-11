@@ -2,13 +2,28 @@ import random
 from collections import deque, OrderedDict
 import numpy as np
 import torch
-from torch.utils.data import Dataset, get_worker_info
+from torch.utils.data import Dataset, DataLoader, get_worker_info
 from torchvision.io import VideoReader
+import torch.nn.functional as F
 
 RES = 1024
 MEAN = torch.tensor([0.485, 0.456, 0.406])
 STD  = torch.tensor([0.229, 0.224, 0.225])
 
+def seed_worker(_):
+    """Make NumPy/Python RNG different per worker but reproducible."""
+    import random, numpy as np
+    wi = get_worker_info()
+    base = wi.seed if wi else 0
+    random.seed(base)
+    np.random.seed(base % (2**32))
+
+def load_encoder(device=torch.device("cuda")):
+    # Example stub — replace with your actual model
+    from sam2.build_sam import build_sam2
+
+    sam_model = build_sam2("configs/sam2.1/sam2.1_hiera_l.yaml", ckpt_path="/home/carlos/Downloads/sam2.1_hiera_large.pt", device=device)
+    return SAM2ImagePredictor(sam_model.eval())
 
 class CollateSAM:
     def __init__(self, sam_predictor, device="cuda"):
@@ -36,7 +51,7 @@ class CollateSAM:
         # Fast convs on fixed shapes
         torch.backends.cudnn.benchmark = True
 
-        with torch.inference_mode(), torch.cuda.amp.autocast(True):
+        with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
             trunk = self.sam.model.encoder.trunk(x)
             feats, pos = self.sam.model.encoder.neck(trunk)
 
@@ -145,3 +160,59 @@ class LiveDataset(Dataset):
         im1, im2, im3 = self._im_cache.popleft()
         meta = self._meta_cache.popleft()
         return {"frames": [im1, im2, im3], "meta": meta}
+
+
+def main():
+    device = "cuda"
+    sam = load_encoder(torch.device(device))  # loads encoder on GPU
+
+    video_paths = [...]  # your list of videos
+    ds = LiveDataset(
+        video_paths,
+        separation_options=(3,5,7,9,11,13),
+        size=100_000,
+        n_cached=180,
+        pool_capacity=64,      # if you used the ReaderPool variant
+        num_threads=4,
+        seed=42,
+    )
+
+    collate = CollateSAM(sam, device=device)
+
+    loader = DataLoader(
+        ds,
+        batch_size=8,                 # 8 triplets -> the collate sees 24 frames
+        shuffle=False,                # dataset already shuffles internally; or keep True if you prefer
+        num_workers=8,
+        persistent_workers=True,
+        prefetch_factor=4,
+        pin_memory=True,              # good for H2D overlap
+        worker_init_fn=seed_worker,
+        collate_fn=collate,           # <--- preprocess + encode happen here (main process)
+    )
+
+    # ---- example training loop ----
+    for epoch in range(10):
+        if hasattr(ds, "set_epoch"):
+            ds.set_epoch(epoch)       # reshuffle inside dataset if implemented
+
+        for x, feats, pos, metas in loader:
+            # x:     (B*3, 3, RES, RES)  channels_last, float32 (preprocessed images)
+            # feats: (B*3, C, Hf, Wf)
+            # pos:   (B*3, C, Hf, Wf) or model-specific
+            # metas: list of (path, frame_idx)
+
+            # If you prefer grouping back into triplets (B,3,...):
+            B3 = feats.shape[0]
+            assert B3 % 3 == 0
+            B = B3 // 3
+            feats_3 = feats.view(B, 3, *feats.shape[1:]).contiguous()
+            pos_3   = pos.view(B, 3, *pos.shape[1:]).contiguous()
+
+            # ... feed feats_3/pos_3 to your head/loss
+            # loss = head(feats_3, pos_3, ...)
+            # loss.backward(); optimizer.step()
+            pass
+
+if __name__ == '__main__':
+    main()
