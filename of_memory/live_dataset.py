@@ -1,14 +1,23 @@
-import random
-from collections import deque, OrderedDict
+import glob
+import os
+import time
+from collections import deque, OrderedDict, defaultdict
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader, get_worker_info
 from torchvision.io import VideoReader
 import torch.nn.functional as F
 
+from sam2.sam2_image_predictor import SAM2ImagePredictor
+
+
 RES = 1024
-MEAN = torch.tensor([0.485, 0.456, 0.406])
-STD  = torch.tensor([0.229, 0.224, 0.225])
+device = "cuda"
+MEAN = torch.tensor([0.485, 0.456, 0.406], device=device).view(1, -1, 1, 1)
+STD  = torch.tensor([0.229, 0.224, 0.225], device=device).view(1, -1, 1, 1)
+torch.backends.cudnn.benchmark = True  # post-resize shapes are fixed
+
+VIDEO_DIR = '/home/carlos/git_amazon/of_memory/videos/'
 
 def seed_worker(_):
     """Make NumPy/Python RNG different per worker but reproducible."""
@@ -25,37 +34,31 @@ def load_encoder(device=torch.device("cuda")):
     sam_model = build_sam2("configs/sam2.1/sam2.1_hiera_l.yaml", ckpt_path="/home/carlos/Downloads/sam2.1_hiera_large.pt", device=device)
     return SAM2ImagePredictor(sam_model.eval())
 
-class CollateSAM:
-    def __init__(self, sam_predictor, device="cuda"):
-        self.sam = sam_predictor
-        self.device = device
 
+class CollateCPU:
+    """Return CPU uint8 batches bucketed by (H, W) so we can resize per-bucket on GPU later."""
     def __call__(self, batch):
-        # Flatten frames
+        # flatten triplets from dataset
         imgs, metas = [], []
         for b in batch:
             for i, fr in enumerate(b["frames"]):
-                imgs.append(fr)  # (3,H,W) uint8 CPU tensor
-                # meta is (path, (f0,f1,f2)); we store the specific frame idx
-                metas.append((b["meta"][0], b["meta"][1][i]))
+                imgs.append(fr)  # (3,H,W) uint8 CPU
+                metas.append((b["meta"][0], b["meta"][1][i]))  # (path, frame_idx)
 
-        # Stack -> (N,3,H,W), move to GPU, channels_last
-        x = torch.stack(imgs, 0).to(self.device, non_blocking=True) \
-                                .contiguous(memory_format=torch.channels_last)
-        x = x.float().div_(255.0)
-        x = F.interpolate(x, size=(RES, RES), mode="bilinear", align_corners=False)
-        mean = MEAN.to(self.device).view(1, -1, 1, 1)
-        std  = STD.to(self.device).view(1, -1, 1, 1)
-        x = (x - mean) / std
+        # bucket indices by (H,W)
+        buckets = defaultdict(list)              # (H,W) -> [idx,...]
+        for i, t in enumerate(imgs):
+            h, w = int(t.shape[-2]), int(t.shape[-1])
+            buckets[(h, w)].append(i)
 
-        # Fast convs on fixed shapes
-        torch.backends.cudnn.benchmark = True
+        # stack each bucket on CPU
+        cpu_batches = []                         # list[Tensor (k,3,H,W) uint8 CPU]
+        cpu_metas   = []                         # list[list[meta]] aligned with cpu_batches
+        for _, idxs in buckets.items():
+            cpu_batches.append(torch.stack([imgs[i] for i in idxs], 0))
+            cpu_metas.append([metas[i] for i in idxs])
 
-        with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-            trunk = self.sam.model.encoder.trunk(x)
-            feats, pos = self.sam.model.encoder.neck(trunk)
-
-        return x, feats, pos, metas
+        return cpu_batches, cpu_metas
 
 
 
@@ -72,9 +75,8 @@ class _ReaderPool:
             return vr, meta
         vr = VideoReader(path, "video", num_threads=self.num_threads)
         md = vr.get_metadata()["video"]
-        fps = md.get("fps") or md.get("framerate") or md.get("average_fps") or 30.0
-        if hasattr(fps, "numerator"): fps = float(fps.numerator) / float(fps.denominator)
-        dur = float(md["duration"])
+        fps = md.get("fps")[0] or md.get("framerate")[0] or md.get("average_fps")[0] or 30.0
+        dur = float(md["duration"][0])
         nframes = max(1, int(dur * float(fps) + 0.5))
         meta = {"fps": float(fps), "duration": dur, "nframes": nframes}
         self.cache[path] = (vr, meta)
@@ -122,15 +124,19 @@ class LiveDataset(Dataset):
         f0, f1, f2 = start, start + mid, start + sep - 1
 
         # seek to time in seconds
-        vr.seek(f0 / fps, keyframe=True)
+        vr.seek(f0 / fps, keyframes_only=True)
 
         decoded = []
         needed = f2 - f0 + 1
         for i, fr in enumerate(vr):
-            decoded.append(fr["data"])  # uint8 HxWxC CPU
-            if len(decoded) >= needed:
+            if i == 0:
+                decoded.append(fr["data"])  # uint8 CHW CPU
+            elif i == mid:
+                decoded.append(fr["data"])  # uint8 CHW CPU
+            elif i == sep - 1:
+                decoded.append(fr["data"])  # uint8 CHW CPU
                 break
-        if len(decoded) < needed:
+        if len(decoded) < 3:
             # fallback: restart
             vr.seek(0.0, keyframe=True)
             decoded = []
@@ -141,10 +147,9 @@ class LiveDataset(Dataset):
             if len(decoded) < needed:
                 raise RuntimeError(f"Failed to decode {path}")
 
-        take = [decoded[0], decoded[mid], decoded[sep-1]]
         # HWC->CHW uint8
-        triplet = [t.permute(2,0,1).contiguous() for t in take]
-        return triplet, (f0, f1, f2)
+        #triplet = [t.permute(2,0,1).contiguous() for t in decoded]
+        return decoded, (f0, f1, f2)
 
     def _renew_cache(self, start_idx):
         # Fill cache with next n_cached samples
@@ -166,22 +171,22 @@ def main():
     device = "cuda"
     sam = load_encoder(torch.device(device))  # loads encoder on GPU
 
-    video_paths = [...]  # your list of videos
+    video_paths = glob.glob(os.path.join(VIDEO_DIR, '**', '*.mp4'), recursive=True)
     ds = LiveDataset(
         video_paths,
         separation_options=(3,5,7,9,11,13),
         size=100_000,
-        n_cached=180,
-        pool_capacity=64,      # if you used the ReaderPool variant
+        n_cached=128,
+        pool_capacity=32,      # if you used the ReaderPool variant
         num_threads=4,
         seed=42,
     )
 
-    collate = CollateSAM(sam, device=device)
+    collate = CollateCPU()
 
     loader = DataLoader(
         ds,
-        batch_size=8,                 # 8 triplets -> the collate sees 24 frames
+        batch_size=6,                 # 8 triplets -> the collate sees 24 frames
         shuffle=False,                # dataset already shuffles internally; or keep True if you prefer
         num_workers=8,
         persistent_workers=True,
@@ -192,27 +197,31 @@ def main():
     )
 
     # ---- example training loop ----
+    tt = time.time()
     for epoch in range(10):
         if hasattr(ds, "set_epoch"):
             ds.set_epoch(epoch)       # reshuffle inside dataset if implemented
 
-        for x, feats, pos, metas in loader:
-            # x:     (B*3, 3, RES, RES)  channels_last, float32 (preprocessed images)
-            # feats: (B*3, C, Hf, Wf)
-            # pos:   (B*3, C, Hf, Wf) or model-specific
-            # metas: list of (path, frame_idx)
+        for cpu_batches, cpu_metas in loader:
+            # move/normalize/resize per bucket (no padding), then concat
+            xs = []
+            metas = []
+            for cpu_batch, metas_bucket in zip(cpu_batches, cpu_metas):
+                x = cpu_batch.to(device, non_blocking=True).contiguous(memory_format=torch.channels_last)
+                x = x.float().div_(255.0)
+                x = F.interpolate(x, size=(RES, RES), mode="bilinear", align_corners=False)
+                x = (x - MEAN) / STD
+                xs.append(x)
+                metas.extend(metas_bucket)
 
-            # If you prefer grouping back into triplets (B,3,...):
-            B3 = feats.shape[0]
-            assert B3 % 3 == 0
-            B = B3 // 3
-            feats_3 = feats.view(B, 3, *feats.shape[1:]).contiguous()
-            pos_3   = pos.view(B, 3, *pos.shape[1:]).contiguous()
+            x_all = torch.cat(xs, dim=0)  # (B*3, 3, RES, RES), channels_last
 
-            # ... feed feats_3/pos_3 to your head/loss
-            # loss = head(feats_3, pos_3, ...)
-            # loss.backward(); optimizer.step()
-            pass
+            # single encoder pass
+            with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+                trunk = sam.model.image_encoder.trunk(x_all)
+                feats, pos = sam.model.image_encoder.neck(trunk)
+            print(time.time() - tt)
+            tt = time.time()
 
 if __name__ == '__main__':
     main()
