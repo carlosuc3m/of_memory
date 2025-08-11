@@ -13,7 +13,7 @@ from torch import nn, optim
 from torch.utils.data import random_split, DataLoader
 from tqdm import tqdm
 
-from of_memory.model_unet import OFMNet
+from of_memory.model_carlos import OFMNet
 from of_memory.unet import UNet
 from of_memory.ofm_transforms import OFMTransforms
 from of_memory.encoding_dataset import EncodingDataset
@@ -27,12 +27,23 @@ from torch.amp import autocast, GradScaler
 
 B_SIZE = 4
 
-def save_checkpoint(model, optimizer, scheduler, epoch, loss, path="checkpoint.pt"):
+def load_checkpoint(path, model, optimizer):
+    """
+    Loads model & optimizer & scheduler states, and returns:
+      start_epoch, last_loss
+    """
+    checkpoint = torch.load(path, map_location="cpu")
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    start_epoch = checkpoint['epoch'] + 1  # next epoch to run
+    last_loss = checkpoint['loss']
+    return start_epoch, last_loss
+
+def save_checkpoint(model, optimizer, epoch, loss, path="checkpoint.pt"):
     torch.save({
         'epoch': epoch,
         'model_state_dict':      model.state_dict(),
         'optimizer_state_dict':  optimizer.state_dict(),
-        'scheduler_state_dict':  scheduler.state_dict(),
         'loss': loss,
     }, path)
 
@@ -48,8 +59,8 @@ def main():
     filters = 64
 
     ## LIGHT PARAMS
-    pyramid_levels = 7
-    fusion_pyramid_levels = 3
+    pyramid_levels = 8
+    fusion_pyramid_levels = 5
     specialized_levels = 3
     sub_levels = 4
     flow_convs = [3, 3, 3, 3]
@@ -57,7 +68,7 @@ def main():
     filters = 16
 
     ## OG learning_rate = 0.0001
-    learning_rate = 0.003
+    learning_rate = 0.0003
     learning_rate_decay_steps = 750000
     learning_rate_decay_rate = 0.464158
     learning_rate_staircase = True
@@ -71,16 +82,17 @@ def main():
                             filters=filters,
                             use_aux_outputs=True)
 
-    model = OFMNet(config)
-    #model = UNet(3,256, factor=16)
+    #model = OFMNet(config)
+    model = UNet(3,256).cpu()
     #model = ResNet(256)
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
-        lr=learning_rate,
+        lr=0.00003,
     )
+    _, best_val_loss = load_checkpoint("/home/carlos/git_amazon/of_memory/checkpoints/checkpoint.pt", model, optimizer)
+    optimizer.param_groups[0]['lr'] = 0.00001
     h5_path = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_0_toy.h5'
-    transforms = OFMTransforms(1024, max_hole_area=0.0, max_sprinkle_area=0.0)
     dataset = EncodingDataset(h5_path)
     train_len = int(0.8 * len(dataset))
     val_len   = len(dataset) - train_len
@@ -92,61 +104,21 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=B_SIZE, shuffle=True, num_workers=4)
     val_loader   = DataLoader(val_ds,   batch_size=8, shuffle=False, num_workers=2)
 
-    train_model(model=model, transforms=transforms, train_loader=train_loader, val_loader=val_loader, optimizer=optimizer,
-                criterion=nn.MSELoss(), device=torch.device("cuda"), num_epochs=400, scheduler=None)
-
-
-
-def train_model(
-    model: nn.Module,
-    transforms: nn.Module,
-    train_loader: DataLoader,
-    val_loader: Optional[DataLoader],
-    optimizer: optim.Optimizer,
-    criterion: nn.Module,
-    device: torch.device,
-    num_epochs: int,
-    scheduler: Optional[optim.lr_scheduler._LRScheduler] = None,
-    grad_clip: Optional[float] = None,
-) -> Dict[str, Any]:
-    """
-    Train and validate a PyTorch model.
-
-    Args:
-        model:        the neural network to train.
-        train_loader: DataLoader for the training set.
-        val_loader:   DataLoader for validation (or None to skip).
-        optimizer:    torch.optim optimizer.
-        criterion:    loss function (nn.Module).
-        device:       torch.device('cuda') or ('cpu').
-        num_epochs:   total epochs to run.
-        scheduler:    optional LR scheduler (step each epoch).
-        grad_clip:    optional max-norm for gradient clipping.
-
-    Returns:
-        A dict containing:
-          - 'best_model': state_dict of best‐validation model,
-          - 'history': { 'train_loss': [...], 'val_loss': [...] },
-          - 'best_epoch': int index of best validation.
-    """
-    #sam_loss = SAM2Loss(torch.device("cuda"))
-    since = time.time()
     best_model_wts = copy.deepcopy(model.state_dict())
-    best_val_loss = float('inf')
+     
     history = {'train_loss': [], 'val_loss': [], 'train_seg_loss': [], 'val_seg_loss': []}
 
+    device=torch.device("cuda")
     model.to(device)
+    for state in optimizer.state.values():
+        for k, v in state.items():
+            if torch.is_tensor(v):
+                state[k] = v.to(device)
     scaler = GradScaler("cuda")
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=len(train_loader) * 5, T_mult=2, eta_min=3e-7)
-    # The LR schedule initialization resets the initial LR of the optimizer.
     beta_loss = 0
     counter_iter = -1
-    """
-    for layer in model.modules():
-      if isinstance(layer, (torch.nn.Conv2d, torch.nn.Linear)):
-          nn.utils.spectral_norm(layer)
-    """
-    prev_loss = float('inf')
+    criterion = nn.MSELoss()
+    num_epochs = 400
     for epoch in range(1, num_epochs + 1):
         # ——— Training phase ———
         model.train()
@@ -180,10 +152,10 @@ def train_model(
 
                 optimizer.zero_grad()
                 with autocast("cuda", dtype=torch.bfloat16):
-                    outputs = model(x0, x1, encoding0)
-                    #pred = model(x1, encoding0)
+                    #outputs = model(x0, x1, encoding0)
+                    pred = model(x1, encoding0)
                     # If model returns dict:
-                    pred = outputs.get('image', outputs)
+                    #pred = outputs.get('image', outputs)
                     total_loss = criterion(pred, target)
                     #l3, l4 = sam_loss(target, pred)
                 scaler.scale(total_loss).backward()
@@ -193,7 +165,6 @@ def train_model(
 
                 scaler.step(optimizer)
                 scaler.update()
-                #lr_scheduler.step()
                 if counter_iter % 20 == 0 and False:
                   print(total_loss.item())
                   print(beta_loss / 20)
@@ -211,12 +182,10 @@ def train_model(
 
         history['train_loss'].append(epoch_train_loss)
         #history['train_seg_loss'].append(epoch_train_seg_loss)
-        if prev_loss < epoch_train_loss:
-            optimizer.param_groups[0]['lr'] /= 2
-        prev_loss = epoch_train_loss
+
         # ——— Validation phase ———
         if val_loader is not None and epoch % 10 == 0:
-            save_checkpoint(model, optimizer, lr_scheduler, epoch, total_loss, path="/home/carlos/git_amazon/of_memory/checkpoints/checkpoint.pt")
+            save_checkpoint(model, optimizer, epoch, total_loss, path="/home/carlos/git_amazon/of_memory/checkpoints/checkpoint.pt")
             model.eval()
             val_running = 0.0
             numbers = 0
@@ -228,9 +197,9 @@ def train_model(
                     encoding0 = encoding0.to(device)
                     target = target.to(device)
 
-                    outputs = model(x0, x1, encoding0)
-                    #pred = model(x1, encoding0)
-                    pred = outputs.get('image', outputs)
+                    #outputs = model(x0, x1, encoding0)
+                    pred = model(x1, encoding0)
+                    #pred = outputs.get('image', outputs)
                     loss = criterion(pred, target)
                     #l3, l4 = sam_loss(target, pred)
 
@@ -244,12 +213,10 @@ def train_model(
 
             # Checkpoint best model
             if epoch_val_loss < best_val_loss:
-              save_checkpoint(model, optimizer, lr_scheduler, epoch, total_loss, path="/home/carlos/git_amazon/of_memory/checkpoints/best_checkpoint.pt")
+              save_checkpoint(model, optimizer, epoch, total_loss, path="/home/carlos/git_amazon/of_memory/checkpoints/best_checkpoint.pt")
 
         # ——— Scheduler step ———
 
-    time_elapsed = time.time() - since
-    print(f"Training complete in {time_elapsed//60:.0f}m {time_elapsed%60:.0f}s")
     print(f"Best val loss: {best_val_loss:.4f} (epoch {best_val_loss})")
 
     # Load best weights

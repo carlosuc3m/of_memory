@@ -15,7 +15,7 @@ import sys
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 
-MAX_SIZE = 300 * 1024 * 1024 * 1024
+MAX_SIZE = 1 * 1024 * 1024 * 1024
 
 # -----------------------------------------------------------------------------
 # 1) Replace this with however you load your encoder.
@@ -34,7 +34,7 @@ def load_encoder():
 # 2) Settings: adjust paths, augmentation count, and target size here
 # -----------------------------------------------------------------------------
 VIDEO_DIR             = '/home/carlos/git_amazon/of_memory/videos/'        # where your .mp4 files live
-OUT_H5                = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_3_toy.h5'  # output HDF5
+OUT_H5                = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_toy.h5'  # output HDF5
 AUGS_PER_PAIR         = 3                # how many random augs per consecutive pair
 TARGET_SIZE           = (1024, 1024)       # spatial size for crop/resize
 DEVICE                = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -96,28 +96,17 @@ def main():
         raise RuntimeError(f"No .mp4 files found in {VIDEO_DIR!r}")
 
     # open HDF5 with resizable datasets
-    unit_size = 3 * TARGET_SIZE[0] * TARGET_SIZE[1] * 2 * 4 + 256 * 64 * 64 * 2 * 4
-    max_images = MAX_SIZE // unit_size         # image height & width
-    chunks = (1, 3, TARGET_SIZE[0], TARGET_SIZE[1])
-    compression = "gzip"
-    compression_opts = 4
+    unit_size = 3 * TARGET_SIZE[0] * TARGET_SIZE[1] * 2 + 256 * 64 * 64 * 2 * 4
+    max_images = MAX_SIZE // unit_size
     with h5py.File(OUT_H5, 'w') as h5:
         img1_ds = h5.create_dataset('img1',
                                     shape=(0, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
                                     maxshape=(None, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
-                                    dtype='float32',
-                                    chunks=chunks,
-                                    compression=compression,
-                                    compression_opts=compression_opts,
-                                    shuffle=True)
+                                    dtype='uint8')
         img2_ds = h5.create_dataset('img2',
                                     shape=(0, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
                                     maxshape=(None, 3, TARGET_SIZE[0], TARGET_SIZE[1]),
-                                    dtype='float32',
-                                    chunks=chunks,
-                                    compression=compression,
-                                    compression_opts=compression_opts,
-                                    shuffle=True)
+                                    dtype='uint8')
         enc1_ds = h5.create_dataset('enc1',
                                     shape=(0, 256, 64, 64),
                                     maxshape=(None, 256, 64, 64),
@@ -129,7 +118,7 @@ def main():
 
         idx = 0
         iter_per = 200
-        for vid_path in video_paths[660:]:
+        for vid_path in video_paths[len(video_paths) // 2 :]:
             print(vid_path)
             cap = cv2.VideoCapture(vid_path)
             frames = []
@@ -159,14 +148,16 @@ def main():
                     #t1 = to_tensor(a1).unsqueeze(0).to(DEVICE)
                     #t2 = to_tensor(a2).unsqueeze(0).to(DEVICE)
                     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-                        tensor1 = encoder._transforms(a1)[None, ...].cpu().numpy()
-                        tensor2 = encoder._transforms(a2)[None, ...].cpu().numpy()
+                        tensor1 = transforms_rgb(torch.from_numpy(np.array(a1)).permute(2, 0, 1)).unsqueeze(0).cpu().numpy()
+                        tensor2 = transforms_rgb(torch.from_numpy(np.array(a2)).permute(2, 0, 1)).unsqueeze(0).cpu().numpy()
                         encoder.set_image(a1)
                         image_embed = encoder._features["image_embed"]
                         f1 = image_embed.cpu().numpy()
                         encoder.set_image(a2)
                         image_embed = encoder._features["image_embed"]
                         f2 = image_embed.cpu().numpy()
+                        #a1 = encoder._transforms(a1)[None, ...].cpu().numpy()
+                        #a2 = encoder._transforms(a2)[None, ...].cpu().numpy()
 
                     # append
                     for ds, arr in ((img1_ds, tensor1),
@@ -187,7 +178,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    log_file = "/home/carlos/git_amazon/finished.txt"
-    os.makedirs(os.path.dirname(log_file), exist_ok=True)
-    with open(log_file, "w") as f:
-        print("done", file=f, flush=True)

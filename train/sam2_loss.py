@@ -17,7 +17,7 @@ class SAM2Loss(nn.Module):
     Input images are expected in [0,1] RGB; this module multiplies by 255
     and subtracts ImageNet means to match the original TF implementation.
     """
-    def __init__(self, device: torch.device = torch.device('cpu'), loss_weights=[1, 0.5, 0.1, 0.5], eps=1e-6):
+    def __init__(self, device: torch.device = torch.device('cpu'), loss_weights=[1, 0.1], eps=1e-6):
         super().__init__()
 
         def load_encoder():
@@ -36,6 +36,8 @@ class SAM2Loss(nn.Module):
             p.requires_grad = False
         self.eps = eps
         self.ww = loss_weights
+
+        self.prompts = None
 
     def predict_batch(
         self,
@@ -191,7 +193,10 @@ class SAM2Loss(nn.Module):
         self.sam2_predictor._features["high_res_feats"] = []
         self.sam2_predictor._orig_hw = [[1024, 1024]] * gt_encoding.shape[0]
 
-        prompts = self.create_random_prompts()
+        if self.prompts == None:
+            self.prompts = self.create_random_prompts()
+        
+        prompts = self.prompts
 
         t_masks, t_ious, _ = self.predict_batch(
             point_coords_batch=prompts["point_coords_batch"] if "point_coords_batch" in prompts.keys() else None,
@@ -212,7 +217,7 @@ class SAM2Loss(nn.Module):
             return_logits=True,
             )
         
-        T = 4.0
+        T = 1.0
         t_logits_T = t_masks / T
         s_logits_T = s_masks / T
 
@@ -242,14 +247,16 @@ class SAM2Loss(nn.Module):
             target= t_ious.detach()
         )
 
+        """
         p = torch.sigmoid(s_masks)
         q = (t_probs_T.detach() >= 0.5).float()
         inter = (p * q).sum(dim=[2,3])
         union = p.sum(dim=[2,3]) + q.sum(dim=[2,3])
         dice_loss = 1 - ((2 * inter + self.eps) / (union + self.eps)).mean()
+        """
 
         #return self.ww[0] * kd_loss, self.ww[1] * bce_loss, self.ww[2] * iou_loss, self.ww[3] * dice_loss
-        return self.ww[1] * bce_loss, self.ww[2] * iou_loss, self.ww[3] * dice_loss
+        return self.ww[0] * bce_loss, self.ww[1] * iou_loss
 
 
     def create_random_prompts(self):

@@ -29,6 +29,27 @@ def build_image_pyramid(image: torch.Tensor,
     return pyramid
 
 
+def warp_per_channel(image: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
+    """
+    Warp each channel of `image` with its own flow field.
+    
+    Args:
+        image: [B, C, H, W]
+        flow:  [C, 2, H, W]   # flow[c] applied to image[:, c, :, :]
+    
+    Returns:
+        warped: [B, C, H, W]
+    """
+    B, C, H, W = image.shape
+    image_flat = image.reshape(B * C, 1, H, W)
+    flow_flat  = flow.reshape(B * C, 2, H, W)
+
+    warped_flat = warp(image_flat, flow_flat)  # → [B*C, 1, H, W]
+
+    warped = warped_flat.reshape(B, C, H, W)
+    return warped
+
+
 def warp(image: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
     """
     Backward warp an image (or feature) tensor according to a flow field.
@@ -135,6 +156,25 @@ def pyramid_warp(feature_pyramid: List[torch.Tensor],
     """
     return [
         warp(feat, flow)
+        for feat, flow in zip(feature_pyramid, flow_pyramid)
+    ]
+
+
+def pyramid_channel_warp(feature_pyramid: List[torch.Tensor],
+                 flow_pyramid: List[torch.Tensor]
+) -> List[torch.Tensor]:
+    """
+    Warp each level of a feature pyramid using its corresponding flow.
+    
+    Args:
+        feature_pyramid: List of [B, C_i, H_i, W_i] tensors.
+        flow_pyramid:    List of [B, 2, H_i, W_i] tensors.
+    
+    Returns:
+        List of warped [B, C_i, H_i, W_i] tensors.
+    """
+    return [
+        warp_per_channel(feat, flow)
         for feat, flow in zip(feature_pyramid, flow_pyramid)
     ]
 

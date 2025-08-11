@@ -61,19 +61,16 @@ class PyramidFlowEstimator(nn.Module):
     """
     def __init__(self, config: Options):
         super().__init__()
-        self.levels = config.pyramid_levels
-        self.specialized = config.specialized_levels
 
         # Build one predictor per level up to specialized_levels
         self.predictors = nn.ModuleList()
-        for i in range(self.specialized):
+        start_chan = 32
+        factor = 2
+        for i in range(config.pyramid_levels):
             self.predictors.append(
-                FlowEstimator(config.flow_convs[i], config.flow_filters[i])
+                FlowEstimator(2, start_chan)
             )
-        # Shared predictor for all remaining coarser levels
-        shared = FlowEstimator(config.flow_convs[-1], config.flow_filters[-1])
-        for _ in range(self.specialized, self.levels):
-            self.predictors.append(shared)
+            start_chan *= factor
 
     def forward(self,
                 feat_pyr_a: List[torch.Tensor],
@@ -108,7 +105,5 @@ class PyramidFlowEstimator(nn.Module):
 
             # Update the flow by adding the residual
             v = v + v_res
-        with torch.no_grad():
-            mse = F.mse_loss(feat_pyr_a[0], warped_b)
         # Return in finest-first order
         return list(reversed(residuals))

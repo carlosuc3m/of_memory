@@ -27,7 +27,7 @@ class OFMTransforms(nn.Module):
         )
 
     def __call__(self, x):
-        return self.transforms(x)
+        return self.transforms(x / 255)
 
     def postprocess_masks(self, masks: torch.Tensor, orig_hw) -> torch.Tensor:
         """
