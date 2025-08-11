@@ -6,7 +6,15 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+from PIL import Image
 import cv2
+
+def load_encoder(device=torch.device("cuda")):
+    # Example stub — replace with your actual model
+    from sam2.build_sam import build_sam2
+
+    sam_model = build_sam2("configs/sam2.1/sam2.1_hiera_l.yaml", ckpt_path="/home/carlos/Downloads/sam2.1_hiera_large.pt", device=device)
+    return SAM2ImagePredictor(sam_model.eval())
 
 class LiveDataset(Dataset):
     """
@@ -19,6 +27,7 @@ class LiveDataset(Dataset):
             h5_paths = [video_files]
         self.video_files = list(video_files)
         self.size = size
+        self.sam = load_encoder()
         self.max_separation = max_separation
         self.rng = np.random.default_rng()
         self.shuffled = self.rng.permutation(np.arange(size))
@@ -45,48 +54,8 @@ class LiveDataset(Dataset):
         ok, frame = cap.read()
         cap.release()
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frames.append(Image.fromarray(rgb))
+        img = Image.fromarray(rgb)
+        tensor1 = self.sam._transforms(img)[None, ...].cpu().numpy()
+        features, pos = self.sam.model.encoder.neck(self.sam.model.encoder.trunk(tensor1))
 
-        
-
-        # load all four arrays at this index
-        arrs = {
-            'img1': h5f['img1'][local_idx],   # uint8, (3,H,W)
-            'img2': h5f['img2'][local_idx],   # uint8, (3,H,W)
-            'enc1': h5f['enc1'][local_idx],   # float32, (256,64,64)
-            'enc2': h5f['enc2'][local_idx],   # float32, (256,64,64)
-        }
-
-        if random.uniform(0, 1) > 0.5:
-            input_1 = torch.from_numpy(arrs['img1']).float()
-            enc_1   = torch.from_numpy(arrs['enc1']).float()
-            input_2 = torch.from_numpy(arrs['img2']).float()
-            enc_2   = torch.from_numpy(arrs['enc2']).float()
-        else:
-            input_2 = torch.from_numpy(arrs['img1']).float()
-            enc_2   = torch.from_numpy(arrs['enc1']).float()
-            input_1 = torch.from_numpy(arrs['img2']).float()
-            enc_1   = torch.from_numpy(arrs['enc2']).float()
-
-        return input_1, input_2, enc_1, enc_2
-
-    # Make multiprocessing-friendly: avoid pickling open handles
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        state['_h5s'] = [None] * len(self._h5s)
-        return state
-
-    def close(self):
-        for f in self._h5s:
-            try:
-                if f is not None:
-                    f.close()
-            except Exception:
-                pass
-        self._h5s = [None] * len(self._h5s)
-
-    def __del__(self):
-        try:
-            self.close()
-        except Exception:
-            pass
+        return tensor1, features, pos
