@@ -176,7 +176,7 @@ def main():
         video_paths,
         separation_options=(3,5,7,9,11,13),
         size=100_000,
-        n_cached=128,
+        n_cached=32,
         pool_capacity=32,      # if you used the ReaderPool variant
         num_threads=4,
         seed=42,
@@ -188,7 +188,7 @@ def main():
         ds,
         batch_size=6,                 # 8 triplets -> the collate sees 24 frames
         shuffle=False,                # dataset already shuffles internally; or keep True if you prefer
-        num_workers=8,
+        num_workers=4,
         persistent_workers=True,
         prefetch_factor=4,
         pin_memory=True,              # good for H2D overlap
@@ -214,7 +214,6 @@ def main():
                 metas.extend(metas_bucket)
 
             x_all = torch.cat(xs, dim=0)  # (B*3, 3, RES, RES), channels_last
-            print(x_all.shape)
             # single encoder pass
             del xs, x, cpu_batches, cpu_metas, metas
             with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
