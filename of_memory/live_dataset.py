@@ -201,8 +201,7 @@ def main():
     for epoch in range(10):
         if hasattr(ds, "set_epoch"):
             ds.set_epoch(epoch)       # reshuffle inside dataset if implemented
-
-        for cpu_batches, cpu_metas in loader:
+        for counter, (cpu_batches, cpu_metas) in enumerate(loader):
             # move/normalize/resize per bucket (no padding), then concat
             xs = []
             metas = []
@@ -215,13 +214,16 @@ def main():
                 metas.extend(metas_bucket)
 
             x_all = torch.cat(xs, dim=0)  # (B*3, 3, RES, RES), channels_last
-
+            print(x_all.shape)
             # single encoder pass
+            del xs, x, cpu_batches, cpu_metas, metas
             with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-                trunk = sam.model.image_encoder.trunk(x_all)
-                feats, pos = sam.model.image_encoder.neck(trunk)
-            print(time.time() - tt)
+                feats, pos = sam.model.image_encoder.neck(sam.model.image_encoder.trunk(x_all))
+            print(counter, time.time() - tt)
             tt = time.time()
+            del x_all, feats, pos
+            torch.cuda.empty_cache() 
 
 if __name__ == '__main__':
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     main()
