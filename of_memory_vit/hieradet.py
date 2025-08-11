@@ -284,19 +284,6 @@ class Hiera(nn.Module):
             nn.Conv2d(64, 24, kernel_size=1, padding=0),
         )
 
-        self.model = nn.Sequential(
-            # Block 1 (64 -> 128)
-            nn.Conv2d(256, 128, kernel_size=3, padding=1), nn.LeakyReLU(inplace=True),
-            nn.ConvTranspose2d(128, 128, kernel_size=4, stride=2, padding=1), nn.LeakyReLU(inplace=True),
-            nn.Conv2d(128, 128, kernel_size=3, padding=1), nn.LeakyReLU(inplace=True),
-
-            # Block 2 (128 -> 256)
-            nn.Conv2d(128, 64, kernel_size=3, padding=1), nn.LeakyReLU(inplace=True),
-            nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2, padding=1), nn.LeakyReLU(inplace=True),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1), nn.LeakyReLU(inplace=True),
-            nn.Conv2d(64, 24, kernel_size=1, padding=0),
-        )
-
         self.model2 = nn.Sequential(
             # Block 1 (64 -> 128)
             nn.Conv2d(256, 128, kernel_size=3, padding=1), nn.LeakyReLU(inplace=True),

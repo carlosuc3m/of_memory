@@ -34,7 +34,7 @@ def load_encoder():
 # 2) Settings: adjust paths, augmentation count, and target size here
 # -----------------------------------------------------------------------------
 VIDEO_DIR             = '/home/carlos/git_amazon/of_memory/videos/'        # where your .mp4 files live
-OUT_H5                = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_1_toy.h5'  # output HDF5
+OUT_H5                = '/home/carlos/git_amazon/of_memory/dataset/data_pairs_3_toy.h5'  # output HDF5
 AUGS_PER_PAIR         = 3                # how many random augs per consecutive pair
 TARGET_SIZE           = (1024, 1024)       # spatial size for crop/resize
 DEVICE                = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -129,7 +129,7 @@ def main():
 
         idx = 0
         iter_per = 200
-        for vid_path in video_paths[:]:
+        for vid_path in video_paths[660:]:
             print(vid_path)
             cap = cv2.VideoCapture(vid_path)
             frames = []
