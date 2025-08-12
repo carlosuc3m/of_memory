@@ -34,7 +34,8 @@ class FlowEstimator(nn.Module):
 
         # num_convs of 3×3 conv + leaky ReLU
         for _ in range(num_convs):
-            layers.append(nn.Conv2d(in_channels=in_filters, out_channels=num_filters, kernel_size=3, padding=1))
+            layers.append(nn.Conv2d(in_channels=in_filters * 2, out_channels=num_filters, kernel_size=3, padding=1))
+            in_filters = num_filters // 2
             layers.append(nn.LeakyReLU(0.2, inplace=True))
 
         # one 1×1 conv (half the filters) + leaky ReLU
@@ -73,10 +74,10 @@ class PyramidFlowEstimator(nn.Module):
         self.predictors = nn.ModuleList()
         for i in range(self.specialized):
             self.predictors.append(
-                FlowEstimator(config.flow_convs[i], config.flow_filters[i], config.filters, i)
+                FlowEstimator(config.flow_convs[i], config.flow_filters[i], config.filters, config.sub_levels, i)
             )
         # Shared predictor for all remaining coarser levels
-        shared = FlowEstimator(config.flow_convs[-1], config.flow_filters[-1])
+        shared = FlowEstimator(config.flow_convs[-1], config.flow_filters[-1], config.filters, config.sub_levels, 3)
         for _ in range(self.specialized, self.levels):
             self.predictors.append(shared)
 
@@ -113,7 +114,5 @@ class PyramidFlowEstimator(nn.Module):
 
             # Update the flow by adding the residual
             v = v + v_res
-        with torch.no_grad():
-            mse = F.mse_loss(feat_pyr_a[0], warped_b)
         # Return in finest-first order
         return list(reversed(residuals))
