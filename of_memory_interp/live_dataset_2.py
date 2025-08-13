@@ -8,6 +8,8 @@ from torch.utils.data import Dataset, DataLoader, get_worker_info
 from torchvision.io import VideoReader
 import torch.nn.functional as F
 
+from torchvision.transforms.functional import normalize
+
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 
@@ -202,8 +204,9 @@ def main():
             for cpu_batch, metas_bucket in zip(cpu_batches, cpu_metas):
                 x = cpu_batch.to(device, non_blocking=True).contiguous(memory_format=torch.channels_last)
                 x = x.float().div_(255.0)
-                x = F.interpolate(x, size=(RES, RES), mode="bilinear", align_corners=False)
-                x = (x - MEAN) / STD
+                x = F.interpolate(x, size=(RES, RES), mode="bilinear", align_corners=False, antialias=True)
+                x = normalize(x, MEAN, STD)
+                #x = (x - MEAN) / STD
                 xs.append(x)
                 metas.extend(metas_bucket)
 
@@ -211,10 +214,17 @@ def main():
             # single encoder pass
             del xs, x, cpu_batches, cpu_metas, metas
             with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-                feats, pos = sam.model.image_encoder.neck(sam.model.image_encoder.trunk(x_all))
+                feats, _ = sam.model.image_encoder.neck(sam.model.image_encoder.trunk(x_all))
             print(counter, time.time() - tt)
+            del _
+            B = int(x_all.shape[0] // 2)
+            x_in, x_out = x_all.reshape(B, 2, *x_all.shape[1:]).unbind(1)
+            del x_all
+            (enc1_in, enc1_out), (enc2_in, enc2_out), (enc3_in, enc3_out) = [
+                f.reshape(B, 2, *f.shape[1:]).unbind(1) for f in feats[:3]
+                ]
+            del feats
             tt = time.time()
-            del x_all, feats, pos
             torch.cuda.empty_cache() 
 
 if __name__ == '__main__':
