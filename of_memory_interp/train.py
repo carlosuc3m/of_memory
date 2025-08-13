@@ -17,11 +17,11 @@ import torch.nn.functional as F
 
 from torchvision.transforms.functional import normalize
 
-from .hiera import Hiera
-from .vit_model import ViTModel
+from of_memory_interp.hiera import Hiera
+from of_memory_interp.vit_model import ViTModel
 from sam2.modeling.position_encoding import PositionEmbeddingSine
 from sam2.modeling.backbones.image_encoder import FpnNeck
-from .live_dataset_2 import LiveDataset, load_encoder, CollateCPU, seed_worker
+from of_memory_interp.live_dataset_2 import LiveDataset, load_encoder, CollateCPU, seed_worker
 
 
 from torch.amp import autocast, GradScaler
@@ -235,24 +235,34 @@ def train_model(
                 # single encoder pass
                 del xs, x, cpu_batches, cpu_metas, metas
                 with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-                    feats, _ = sam.model.image_encoder.neck(sam.model.image_encoder.trunk(x_all))
+                    in_feats = sam.model.image_encoder.trunk(x_all)
+                    feats, _ = sam.model.image_encoder.neck(in_feats)
                 del _
+                in_feats = in_feats[:-1]
                 feats = feats[:-1]
                 B = int(x_all.shape[0] // 2)
                 x_in, x_out = x_all.reshape(B, 2, *x_all.shape[1:]).unbind(1)
+                x_in = x_in.clone()
                 del x_all
-                (enc1_in, enc1_out), (enc2_in, enc2_out), (enc3_in, enc3_out) = [
+                (_1, enc1_out), (_2, enc2_out), (_3, enc3_out) = [
                     f.reshape(B, 2, *f.shape[1:]).unbind(1) for f in feats[:3]
                     ]
-                del feats
+                del feats, _1, _2, _3, x_out
+                (enc1_out, enc2_out, enc3_out) = (enc1_out.clone(), enc2_out.clone(), enc3_out.clone())
+
+                (enc1_in, _1), (enc2_in, _2), (enc3_in, _3) = [
+                    f.reshape(B, 2, *f.shape[1:]).unbind(1) for f in in_feats[:3]
+                    ]
+                del in_feats, _1, _2, _3
+                (enc1_in, enc2_in, enc3_in) = (enc1_in.clone(), enc2_in.clone(), enc3_in.clone())
 
                 optimizer.zero_grad()
                 with autocast("cuda", dtype=torch.bfloat16):
-                    pred_enc1, pred_enc2, pred_enc3, _ = model(x_in, enc1_in, enc2_in, enc3_in)
-                    del _
+                    [pred_enc1, pred_enc2, pred_enc3, _], __ = model(x_in, enc1_in, enc2_in, enc3_in)
+                    del _, __
                     # If model returns dict:
-                    total_loss = 0.5 * (criterion(pred_enc1, enc1_out) + criterion(pred_enc2, enc2_out)) \
-                                    + 0.5 * criterion(pred_enc3, enc3_out)
+                    total_loss = 0.5 * (criterion(pred_enc1, enc1_out.detach()) + criterion(pred_enc2, enc2_out.detach())) \
+                                    + 0.5 * criterion(pred_enc3, enc3_out.detach())
                     #l3, l4 = sam_loss(target, pred)
 
 
@@ -268,8 +278,8 @@ def train_model(
                   print(beta_loss / 20)
                   beta_loss = 0
                 beta_loss += total_loss.item()
-                running_loss += (total_loss.item()) * x0.size(0)
-                total_samples += x0.size(0)
+                running_loss += (total_loss.item()) * x_in.size(0)
+                total_samples += x_in.size(0)
                 #running_seg_loss += l3.item() * x0.size(0)
                 tepoch.set_postfix(train_loss=f"{(running_loss / (total_samples)):.6f}",
                                    #train_seg_loss=f"{(running_seg_loss / ((tepoch.n + 1)*x0.size(0))):.6f}"
