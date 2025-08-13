@@ -13,6 +13,9 @@ import os
 from torch import nn, optim
 from torch.utils.data import random_split, DataLoader
 from tqdm import tqdm
+import torch.nn.functional as F
+
+from torchvision.transforms.functional import normalize
 
 from .hiera import Hiera
 from .vit_model import ViTModel
@@ -25,7 +28,10 @@ from torch.amp import autocast, GradScaler
 
 
 B_SIZE = 4
+RES = 1024
 DEVICE = torch.device("cuda")
+MEAN = torch.tensor([0.485, 0.456, 0.406], device=DEVICE).view(1, -1, 1, 1)
+STD  = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, -1, 1, 1)
 VIDEO_DIR = '/home/carlos/git_amazon/of_memory/videos/'
 SEED = 69
 TRAIN_PERC = 0.8
@@ -200,7 +206,12 @@ def train_model(
     # The LR schedule initialization resets the initial LR of the optimizer.
     beta_loss = 0
     counter_iter = -1
+    sam = load_encoder(torch.device(device)) 
     for epoch in range(1, num_epochs + 1):
+        if hasattr(train_loader.dataset, "set_epoch"):
+            train_loader.dataset.set_epoch(epoch)
+        if hasattr(val_loader.dataset, "set_epoch"):
+            val_loader.dataset.set_epoch(epoch)
         # ——— Training phase ———
         model.train()
         running_loss = 0.0
@@ -208,19 +219,40 @@ def train_model(
         with tqdm(train_loader, desc=f"Epoch {epoch}/{num_epochs} [Train]", unit="batch") as tepoch:
             for batch in tepoch:
                 counter_iter += 1
-                # Unpack your batch: adjust names to your dataset
-                x0, x1, encoding0, target = batch
-                x0 = x0.to(device)
-                x1 = x1.to(device)
-                encoding0 = encoding0.to(device)
-                target = target.to(device)
+                (cpu_batches, cpu_metas) = batch
+                xs = []
+                metas = []
+                for cpu_batch, metas_bucket in zip(cpu_batches, cpu_metas):
+                    x = cpu_batch.to(device, non_blocking=True).contiguous(memory_format=torch.channels_last)
+                    x = x.float().div_(255.0)
+                    x = F.interpolate(x, size=(RES, RES), mode="bilinear", align_corners=False, antialias=True)
+                    x = normalize(x, MEAN, STD)
+                    #x = (x - MEAN) / STD
+                    xs.append(x)
+                    metas.extend(metas_bucket)
+
+                x_all = torch.cat(xs, dim=0)  # (B*3, 3, RES, RES), channels_last
+                # single encoder pass
+                del xs, x, cpu_batches, cpu_metas, metas
+                with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+                    feats, _ = sam.model.image_encoder.neck(sam.model.image_encoder.trunk(x_all))
+                del _
+                feats = feats[:-1]
+                B = int(x_all.shape[0] // 2)
+                x_in, x_out = x_all.reshape(B, 2, *x_all.shape[1:]).unbind(1)
+                del x_all
+                (enc1_in, enc1_out), (enc2_in, enc2_out), (enc3_in, enc3_out) = [
+                    f.reshape(B, 2, *f.shape[1:]).unbind(1) for f in feats[:3]
+                    ]
+                del feats
 
                 optimizer.zero_grad()
                 with autocast("cuda", dtype=torch.bfloat16):
-                    outputs = model(x1, encoding0)
+                    pred_enc1, pred_enc2, pred_enc3, _ = model(x_in, enc1_in, enc2_in, enc3_in)
+                    del _
                     # If model returns dict:
-                    pred = outputs["vision_features"]
-                    total_loss = criterion(pred, target)
+                    total_loss = 0.5 * (criterion(pred_enc1, enc1_out) + criterion(pred_enc2, enc2_out)) \
+                                    + 0.5 * criterion(pred_enc3, enc3_out)
                     #l3, l4 = sam_loss(target, pred)
 
 
