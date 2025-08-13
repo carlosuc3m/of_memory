@@ -49,8 +49,69 @@ def warp_per_channel(image: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
     warped = warped_flat.reshape(B, C, H, W)
     return warped
 
+def _make_base_grid(H, W, device, dtype, align_corners=True):
+    # Precompute a normalized grid in [-1, 1], no meshgrid needed.
+    if align_corners:
+        xs = torch.linspace(-1, 1, W, device=device, dtype=dtype)
+        ys = torch.linspace(-1, 1, H, device=device, dtype=dtype)
+    else:
+        # pixel centers with align_corners=False
+        xs = (torch.arange(W, device=device, dtype=dtype) + 0.5) * (2.0 / W) - 1.0
+        ys = (torch.arange(H, device=device, dtype=dtype) + 0.5) * (2.0 / H) - 1.0
 
-def warp(image: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
+    # Build [1, H, W, 2] by broadcasting instead of meshgrid+stack
+    base = torch.empty((1, H, W, 2), device=device, dtype=dtype)
+    base[..., 0] = xs.view(1, 1, W)   # x
+    base[..., 1] = ys.view(1, H, 1)   # y
+    return base  # [1, H, W, 2]
+
+def warp(image: torch.Tensor,
+         flow: torch.Tensor,
+         *,
+         mode='bilinear',
+         padding_mode='border',
+         align_corners=True,
+         cached_base_grid=None) -> torch.Tensor:
+    """
+    image: [B,C,H,W], flow: [B,2,H,W] with (dx, dy) in pixels.
+    Optionally pass cached_base_grid=[1,H,W,2] (same device/dtype/size) to avoid rebuilding.
+    """
+    B, C, H, W = image.shape
+    device, dtype = image.device, image.dtype
+
+    base_grid = cached_base_grid
+    if (base_grid is None or
+        base_grid.shape[1:3] != (H, W) or
+        base_grid.device != device or
+        base_grid.dtype  != dtype):
+        base_grid = _make_base_grid(H, W, device, dtype, align_corners)
+
+    # Normalize flow to the [-1, 1] grid space (avoid permute/stack chains)
+    if align_corners:
+        sx = 2.0 / max(W - 1, 1)
+        sy = 2.0 / max(H - 1, 1)
+    else:
+        sx = 2.0 / W
+        sy = 2.0 / H
+
+    fx = flow[:, 0].mul(sx)  # [B,H,W]
+    fy = flow[:, 1].mul(sy)  # [B,H,W]
+    flow_norm = torch.stack((fx, fy), dim=-1)  # [B,H,W,2]
+
+    # Broadcast add: [1,H,W,2] + [B,H,W,2] -> [B,H,W,2]
+    sampling_grid = base_grid + flow_norm
+
+    # grid_sample expects contiguous inputs; channels_last can help on some GPUs
+    image_ = image
+    # image_ = image.contiguous(memory_format=torch.channels_last)
+
+    return F.grid_sample(image_, sampling_grid,
+                         mode=mode,
+                         padding_mode=padding_mode,
+                         align_corners=align_corners)
+
+
+def warp_old(image: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
     """
     Backward warp an image (or feature) tensor according to a flow field.
     

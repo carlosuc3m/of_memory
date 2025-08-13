@@ -140,12 +140,12 @@ def main():
                             sub_levels=sub_levels,
                             filters=filters,
                             use_aux_outputs=True)
-    model = OFMNet(config).cuda().eval()
+    model = OFMNet(config).cpu().eval()
 
-    im1 = torch.zeros((1, 3, 1024, 1024), dtype=torch.float32, device="cuda")
-    im2 = torch.zeros((1, 3, 1024, 1024), dtype=torch.float32, device="cuda")
-    enc1 = torch.zeros((1, 256, 64, 64), dtype=torch.float32, device="cuda")
-    enc2 = torch.zeros((1, 256, 64, 64), dtype=torch.float32, device="cuda")
+    im1 = torch.zeros((1, 3, 1024, 1024), dtype=torch.float32, device="cpu")
+    im2 = torch.zeros((1, 3, 1024, 1024), dtype=torch.float32, device="cpu")
+    enc1 = torch.zeros((1, 256, 64, 64), dtype=torch.float32, device="cpu")
+    enc2 = torch.zeros((1, 256, 64, 64), dtype=torch.float32, device="cpu")
     tt = time.time()
     model(im1, im2, enc1, enc2)
     print(time.time() - tt)
