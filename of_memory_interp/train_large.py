@@ -17,7 +17,7 @@ import torch.nn.functional as F
 
 from torchvision.transforms.functional import normalize
 
-from of_memory_interp.hiera import Hiera
+from of_memory_interp.hiera_large import Hiera
 from of_memory_interp.vit_model import ViTModel
 from sam2.modeling.position_encoding import PositionEmbeddingSine
 from sam2.modeling.backbones.image_encoder import FpnNeck
@@ -216,6 +216,9 @@ def train_model(
         # ——— Training phase ———
         model.train()
         running_loss = 0.0
+        running_loss1 = 0.0
+        running_loss2 = 0.0
+        running_loss3 = 0.0
         total_samples = 0
         with tqdm(train_loader, desc=f"Epoch {epoch}/{num_epochs} [Train]", unit="batch") as tepoch:
             for batch in tepoch:
@@ -234,27 +237,22 @@ def train_model(
 
                 x_all = torch.cat(xs, dim=0)  # (B*3, 3, RES, RES), channels_last
                 # single encoder pass
-                del xs, x, cpu_batches, cpu_metas, metas
+                B = int(x_all.shape[0] // 2)
+                x_in, x_out = x_all.reshape(B, 2, *x_all.shape[1:]).unbind(1)
+                del xs, x, cpu_batches, cpu_metas, metas, x_all
                 with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-                    in_feats = sam.model.image_encoder.trunk(x_all)
-                    feats, _ = sam_large.model.image_encoder.neck(sam_large.model.image_encoder.trunk(x_all))
+                    in_feats = sam.model.image_encoder.trunk(x_in)
+                    feats, _ = sam_large.model.image_encoder.neck(sam_large.model.image_encoder.trunk(x_out))
                 del _
                 in_feats = in_feats[:-1]
                 feats = feats[:-1]
-                B = int(x_all.shape[0] // 2)
-                x_in, x_out = x_all.reshape(B, 2, *x_all.shape[1:]).unbind(1)
                 x_in = x_in.clone()
-                del x_all
-                (_1, enc1_out), (_2, enc2_out), (_3, enc3_out) = [
-                    f.reshape(B, 2, *f.shape[1:]).unbind(1) for f in feats[:3]
-                    ]
-                del feats, _1, _2, _3, x_out
+                (enc1_out, enc2_out, enc3_out) = feats[:3]
+                del feats, x_out
                 (enc1_out, enc2_out, enc3_out) = (enc1_out.clone(), enc2_out.clone(), enc3_out.clone())
 
-                (enc1_in, _1), (enc2_in, _2), (enc3_in, _3) = [
-                    f.reshape(B, 2, *f.shape[1:]).unbind(1) for f in in_feats[:3]
-                    ]
-                del in_feats, _1, _2, _3
+                (enc1_in, enc2_in, enc3_in) = in_feats[:3]
+                del in_feats
                 (enc1_in, enc2_in, enc3_in) = (enc1_in.clone(), enc2_in.clone(), enc3_in.clone())
 
                 optimizer.zero_grad()
@@ -262,8 +260,19 @@ def train_model(
                     [pred_enc1, pred_enc2, pred_enc3, _], __ = model(x_in, enc1_in, enc2_in, enc3_in)
                     del _, __
                     # If model returns dict:
-                    total_loss = 0.25 * (criterion(pred_enc1, enc1_out.detach()) + criterion(pred_enc2, enc2_out.detach())) \
-                                    + 0.5 * criterion(pred_enc3, enc3_out.detach())
+                    #total_loss = 0.25 * (criterion(pred_enc1, enc1_out.detach()) + criterion(pred_enc2, enc2_out.detach())) \
+                    #                + 0.5 * criterion(pred_enc3, enc3_out.detach())
+                    loss_enc1 = criterion(pred_enc1, enc1_out.detach())
+                    loss_enc2 = criterion(pred_enc2, enc2_out.detach())
+                    loss_enc3 = criterion(pred_enc3, enc3_out.detach())
+
+                    # weights
+                    w1 = 0.25
+                    w2 = 0.25
+                    w3 = 0.5
+
+                    # total loss (as before)
+                    total_loss = w1 * loss_enc1 + w2 * loss_enc2 + w3 * loss_enc3
                     #l3, l4 = sam_loss(target, pred)
 
 
@@ -280,15 +289,23 @@ def train_model(
                   beta_loss = 0
                 beta_loss += total_loss.item()
                 running_loss += (total_loss.item()) * x_in.size(0)
+                running_loss1 += (loss_enc1.item()) * x_in.size(0)
+                running_loss2 += (loss_enc2.item()) * x_in.size(0)
+                running_loss3 += (loss_enc3.item()) * x_in.size(0)
                 total_samples += x_in.size(0)
                 #running_seg_loss += l3.item() * x0.size(0)
-                tepoch.set_postfix(train_loss=f"{(running_loss / (total_samples)):.6f}",
-                                   #train_seg_loss=f"{(running_seg_loss / ((tepoch.n + 1)*x0.size(0))):.6f}"
+                tepoch.set_postfix(train_loss=f"{(running_loss / total_samples):.6f}",
+                                   train_loss1=f"{(running_loss1 / total_samples):.6f}",
+                                   train_loss2=f"{(running_loss2 / total_samples):.6f}",
+                                   train_loss3=f"{(running_loss3 / total_samples):.6f}"
                                    )
                 del x_in, enc1_in, enc2_in, enc3_in, enc1_out, enc2_out, enc3_out, pred_enc1, pred_enc2, pred_enc3
             epoch_train_loss = running_loss / len(train_loader.dataset)
             #epoch_train_seg_loss = running_seg_loss / len(train_loader.dataset)
-            tepoch.set_postfix(train_loss=epoch_train_loss)
+            tepoch.set_postfix(train_loss=epoch_train_loss,
+                                   train_loss1=f"{(running_loss1 / total_samples):.6f}",
+                                   train_loss2=f"{(running_loss2 / total_samples):.6f}",
+                                   train_loss3=f"{(running_loss3 / total_samples):.6f}")
 
         #if prev_loss < epoch_train_loss:
             #optimizer.param_groups[0]['lr'] /= 2
