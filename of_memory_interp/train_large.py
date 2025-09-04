@@ -10,6 +10,7 @@ from torch.optim.lr_scheduler import LambdaLR
 
 import torch
 import os
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 from torch import nn, optim
 from torch.utils.data import random_split, DataLoader
 from tqdm import tqdm
@@ -21,6 +22,7 @@ from of_memory_interp.hiera_large import Hiera
 from of_memory_interp.vit_model import ViTModel
 from sam2.modeling.position_encoding import PositionEmbeddingSine
 from sam2.modeling.backbones.image_encoder import FpnNeck
+#from of_memory_vit.neck import FpnNeck
 from of_memory_interp.live_dataset_2 import LiveDataset, load_encoder_large, load_encoder, CollateCPU, seed_worker
 
 
@@ -47,7 +49,6 @@ def save_checkpoint(model, optimizer, scheduler, epoch, loss, path="checkpoint.p
 
 def main():
 
-    sam = load_encoder(torch.device(DEVICE))  # loads encoder on GPU
 
     video_paths = glob.glob(os.path.join(VIDEO_DIR, '**', '*.mp4'), recursive=True)
     perm = torch.randperm(len(video_paths), generator=torch.Generator().manual_seed(SEED)).tolist()
@@ -97,7 +98,7 @@ def main():
         collate_fn=collate,           # <--- preprocess + encode happen here (main process)
     )
 
-    hiera = Hiera(embed_dim=32, num_heads=1, stages=[1, 2, 3, 2], global_att_blocks=[4, 5], window_pos_embed_bkg_spatial_size=[7, 7]).cpu()
+    hiera = Hiera(embed_dim=32, num_heads=1, stages=[1, 2, 5, 2], global_att_blocks=[4, 6, 9], window_pos_embed_bkg_spatial_size=[7, 7]).cpu()
     pos_encoding = PositionEmbeddingSine(num_pos_feats=256, normalize=True, scale=None, temperature=1000)
     neck = FpnNeck(position_encoding=pos_encoding, d_model=256, backbone_channel_list=[256, 128, 64, 32],
         fpn_top_down_levels=[2, 3], fpn_interp_model="nearest")
@@ -242,26 +243,33 @@ def train_model(
                 del xs, x, cpu_batches, cpu_metas, metas, x_all
                 with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
                     in_feats = sam.model.image_encoder.trunk(x_in)
+                    #to_sum, _ = sam.model.image_encoder.neck(in_feats)
                     feats, _ = sam_large.model.image_encoder.neck(sam_large.model.image_encoder.trunk(x_out))
                 del _
-                in_feats = in_feats[:-1]
+                in_feats = in_feats#[:-1]
+                #to_sum = to_sum[:-1]
                 feats = feats[:-1]
                 x_in = x_in.clone()
                 (enc1_out, enc2_out, enc3_out) = feats[:3]
                 del feats, x_out
                 (enc1_out, enc2_out, enc3_out) = (enc1_out.clone(), enc2_out.clone(), enc3_out.clone())
-
-                (enc1_in, enc2_in, enc3_in) = in_feats[:3]
+                """
+                (to_sum1, to_sum2, to_sum3) = to_sum[:3]
+                del to_sum
+                (to_sum1, to_sum2, to_sum3) = (to_sum1.clone(), to_sum2.clone(), to_sum3.clone())
+                """
+                (enc1_in, enc2_in, enc3_in, enc4_in) = in_feats#[:3]
                 del in_feats
-                (enc1_in, enc2_in, enc3_in) = (enc1_in.clone(), enc2_in.clone(), enc3_in.clone())
+                (enc1_in, enc2_in, enc3_in, enc4_in) = (enc1_in.clone(), enc2_in.clone(), enc3_in.clone(), enc4_in.clone())
 
                 optimizer.zero_grad()
                 with autocast("cuda", dtype=torch.bfloat16):
-                    [pred_enc1, pred_enc2, pred_enc3, _], __ = model(x_in, enc1_in, enc2_in, enc3_in)
+                    [pred_enc1, pred_enc2, pred_enc3, _], __ = model(x_in, enc1_in, enc2_in, enc3_in, enc4_in)
                     del _, __
                     # If model returns dict:
-                    #total_loss = 0.25 * (criterion(pred_enc1, enc1_out.detach()) + criterion(pred_enc2, enc2_out.detach())) \
-                    #                + 0.5 * criterion(pred_enc3, enc3_out.detach())
+                    total_loss = 0.1 * (criterion(pred_enc1, enc1_out.detach()) + 0.1 * criterion(pred_enc2, enc2_out.detach())) \
+                                    + 1 * criterion(pred_enc3, enc3_out.detach())
+                    """
                     loss_enc1 = criterion(pred_enc1, enc1_out.detach())
                     loss_enc2 = criterion(pred_enc2, enc2_out.detach())
                     loss_enc3 = criterion(pred_enc3, enc3_out.detach())
@@ -273,6 +281,7 @@ def train_model(
 
                     # total loss (as before)
                     total_loss = w1 * loss_enc1 + w2 * loss_enc2 + w3 * loss_enc3
+                    """
                     #l3, l4 = sam_loss(target, pred)
 
 
@@ -287,11 +296,13 @@ def train_model(
                   print(total_loss.item())
                   print(beta_loss / 20)
                   beta_loss = 0
-                beta_loss += total_loss.item()
                 running_loss += (total_loss.item()) * x_in.size(0)
-                running_loss1 += (loss_enc1.item()) * x_in.size(0)
-                running_loss2 += (loss_enc2.item()) * x_in.size(0)
-                running_loss3 += (loss_enc3.item()) * x_in.size(0)
+                del total_loss
+                with torch.no_grad():
+                    running_loss1 += (criterion(pred_enc1.detach(), enc1_out.detach()).item()) * x_in.size(0)
+                    running_loss2 += (criterion(pred_enc2.detach(), enc2_out.detach()).item()) * x_in.size(0)
+                    running_loss3 += (criterion(pred_enc3.detach(), enc3_out.detach()).item()) * x_in.size(0)
+                
                 total_samples += x_in.size(0)
                 #running_seg_loss += l3.item() * x0.size(0)
                 tepoch.set_postfix(train_loss=f"{(running_loss / total_samples):.6f}",
@@ -299,7 +310,8 @@ def train_model(
                                    train_loss2=f"{(running_loss2 / total_samples):.6f}",
                                    train_loss3=f"{(running_loss3 / total_samples):.6f}"
                                    )
-                del x_in, enc1_in, enc2_in, enc3_in, enc1_out, enc2_out, enc3_out, pred_enc1, pred_enc2, pred_enc3
+                del x_in, enc1_in, enc2_in, enc3_in, enc1_out, enc2_out, enc3_out, pred_enc1, pred_enc2,
+                pred_enc3
             epoch_train_loss = running_loss / len(train_loader.dataset)
             #epoch_train_seg_loss = running_seg_loss / len(train_loader.dataset)
             tepoch.set_postfix(train_loss=epoch_train_loss,
@@ -388,5 +400,5 @@ def train_model(
 
 
 if __name__ == '__main__':
-  os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+  
   main()

@@ -300,7 +300,7 @@ class Hiera(nn.Module):
         pos_embed = pos_embed.permute(0, 2, 3, 1)
         return pos_embed
 
-    def forward(self, x: torch.Tensor, enc0: torch.Tensor, enc1: torch.Tensor, enc2: torch.Tensor) -> List[torch.Tensor]:
+    def forward(self, x: torch.Tensor, enc0: torch.Tensor, enc1: torch.Tensor, enc2: torch.Tensor, enc3: torch.Tensor) -> List[torch.Tensor]:
         x = self.patch_embed(x)
         # x: (B, H, W, C)
 
@@ -315,6 +315,8 @@ class Hiera(nn.Module):
                 x = blk(x, enc1)
             elif (i == self.stage_starts[2]):
                 x = blk(x, enc2)
+            elif (i == self.stage_starts[3]):
+                x = blk(x, enc3)
             else:
                 x = blk(x)
             if (i == self.stage_ends[-1]) or (

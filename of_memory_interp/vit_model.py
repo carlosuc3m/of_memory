@@ -14,6 +14,6 @@ class ViTModel(nn.Module):
         self.trunk = trunk
         self.neck = neck
 
-    def forward(self, sample: torch.Tensor, enc0: torch.Tensor, enc1: torch.Tensor, enc2: torch.Tensor):
+    def forward(self, sample: torch.Tensor, enc0: torch.Tensor, enc1: torch.Tensor, enc2: torch.Tensor, enc3: torch.Tensor):
         # Forward through backbone
-        return self.neck(self.trunk(sample, enc0, enc1, enc2))
+        return self.neck(self.trunk(sample, enc0, enc1, enc2, enc3))

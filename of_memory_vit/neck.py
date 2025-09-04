@@ -42,10 +42,17 @@ class FpnNeck(nn.Module):
         self.d_model = d_model
         for dim in backbone_channel_list:
             current = nn.Sequential()
-            current.add_module(
-                "conv",
+            current = nn.Sequential(
                 nn.Conv2d(
                     in_channels=dim,
+                    out_channels=d_model,
+                    kernel_size=3,
+                    stride=stride,
+                    padding=1,
+                ),
+                nn.GELU(),
+                nn.Conv2d(
+                    in_channels=d_model,
                     out_channels=d_model,
                     kernel_size=kernel_size,
                     stride=stride,
@@ -67,7 +74,7 @@ class FpnNeck(nn.Module):
             fpn_top_down_levels = range(len(self.convs))
         self.fpn_top_down_levels = list(fpn_top_down_levels)
 
-    def forward(self, xs: List[torch.Tensor], enc0: torch.Tensor):
+    def forward(self, xs: List[torch.Tensor]):
 
         out = [None] * len(self.convs)
         pos = [None] * len(self.convs)
@@ -90,7 +97,7 @@ class FpnNeck(nn.Module):
                     ),
                     antialias=False,
                 )
-                prev_features = lateral_features + top_down_features + enc0
+                prev_features = lateral_features + top_down_features
                 if self.fuse_type == "avg":
                     prev_features /= 2
             else:
